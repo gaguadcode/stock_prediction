@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 from app.config import config
 from app.models import AnalysisResponse  # Assuming your response model is defined here
-from app.services.prediction_model import PredictionModel  # Import your prediction model
+from app.graph_nodes.prediction_model import PredictionModel  # Import your prediction model
 from langchain.prompts import PromptTemplate
 from langchain.llms import OpenAI
 

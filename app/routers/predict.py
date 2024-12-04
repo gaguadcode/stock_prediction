@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from app.utils.datatypes import StockPredictionRequest, StockPredictionResponse
-from app.services import stock_data, model_inference
+from app.graph_nodes import stock_data, model_inference
 
 router = APIRouter()
 
