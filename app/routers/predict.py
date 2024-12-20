@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException
 from app.utils.datatypes import StockPredictionRequest, StockPredictionResponse
-from app.graph_nodes import stock_data, model_inference
+from app.graph_nodes import model_inference, stock_fetch_data
 
 router = APIRouter()
 
 @router.post("/", response_model=StockPredictionResponse)
 async def predict_stock(data: StockPredictionRequest):
     try:
-        stock_info = await stock_data.fetch_stock_data(data.stock_symbol, data.date)
+        stock_info = await stock_fetch_data.fetch_stock_data(data.stock_symbol, data.date)
         predicted_price = model_inference.predict(stock_info)
         return StockPredictionResponse(
             stock_symbol=data.stock_symbol, date=data.date, predicted_price=predicted_price

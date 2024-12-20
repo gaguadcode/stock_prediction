@@ -5,3 +5,7 @@ requests
 langchain
 ollama
 uvicorn
+langchain-comunity
+pandas
+langchain-ollama
+wikipedia
