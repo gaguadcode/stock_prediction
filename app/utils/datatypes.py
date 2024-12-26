@@ -1,21 +1,56 @@
-from pydantic import BaseModel, Field
-from typing import Literal
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal, List
+from datetime import datetime
 
+
+# Shared validation function for date_target
+def validate_date_target(value):
+    """
+    Validates that the input is a list of dates in 'YYYY-MM-DD' format.
+
+    Args:
+        value (List[str]): The list of dates to validate.
+
+    Returns:
+        List[str]: The validated list of dates.
+
+    Raises:
+        ValueError: If the value is not a list or if any date in the list is invalid.
+    """
+    if not isinstance(value, list):
+        raise ValueError("date_target must be a list of dates in 'YYYY-MM-DD' format.")
+    for date_str in value:
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError(f"Invalid date format: {date_str}. Expected 'YYYY-MM-DD'.")
+    return value
+
+
+# StockPredictionRequest model
 class StockPredictionRequest(BaseModel):
     stock_symbol: str
-    date_period: Literal["monthly", "weekly", "daily"]  # Only these values are valid
-    date_target: str = Field(
+    date_period: Literal["TIME_SERIES_MONTHLY", "TIME_SERIES_WEEKLY", "TIME_SERIES_DAILY"]  # Only these values are valid
+    date_target: List[str] = Field(
         ...,  # Required field
-        regex=r"^\d{4}-\d{2}-\d{2}$",  # Matches the "YYYY-MM-DD" format
-        description="Target date in 'YYYY-MM-DD' format (e.g., '2025-01-01').",
+        description="A list of target dates in 'YYYY-MM-DD' format (e.g., ['2025-01-01', '2025-02-01']).",
     )
 
+    @field_validator("date_target", mode="before")
+    def validate_date_target(cls, value):
+        return validate_date_target(value)
+
+
+# AnalysisResponse model
 class AnalysisResponse(BaseModel):
     generative_response: str
     stock_symbol: str
-    date_period: Literal["monthly", "weekly", "daily"]  # Only these values are valid
-    date_target: str = Field(
+    date_period: Literal["TIME_SERIES_MONTHLY", "TIME_SERIES_WEEKLY", "TIME_SERIES_DAILY"]  # Only these values are valid
+    date_target: List[str] = Field(
         ...,  # Required field
-        regex=r"^\d{4}-\d{2}-\d{2}$",  # Matches the "YYYY-MM-DD" format
-        description="Target date in 'YYYY-MM-DD' format (e.g., '2025-01-01').",
+        description="A list of target dates in 'YYYY-MM-DD' format (e.g., ['2025-01-01', '2025-02-01']).",
     )
+
+    @field_validator("date_target", mode="before")
+    def validate_date_target(cls, value):
+        return validate_date_target(value)

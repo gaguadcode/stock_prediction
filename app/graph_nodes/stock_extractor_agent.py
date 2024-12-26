@@ -48,8 +48,8 @@ class StockDataExtractor:
         prompt_template = PromptTemplate(
             input_variables=["input_text"],
             template=(
-                "Extract the stock symbol (company or commodity), prediction window "
-                "(monthly, weekly, daily...), and target date or dates of prediction from the following input:\n"
+                "Extract the stock symbol (company or commodity), prediction window (date_period) "
+                "(TIME_SERIES_MONTHLY, TIME_SERIES_WEEKLY, TIME_SERIES_DAILY...), and target date or dates of prediction from the following input:\n"
                 "{input_text}\n"
                 "Respond strictly in JSON format:\n"
                 "{{'stock_symbol': '...', 'date_period': '...', 'date_target':['YYYY-MM-DD',...]}}"

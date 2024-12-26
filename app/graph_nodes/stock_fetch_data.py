@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
-from app.config import config
-from utils.datatypes import StockPredictionRequest
+from app.utils.config import config
+from app.utils.datatypes import StockPredictionRequest
 
 
 class HistoricalDataFetcher:
@@ -44,7 +44,7 @@ class HistoricalDataFetcher:
         Returns:
             str: The constructed API URL.
         """
-        return f"{self.base_url}?function=TIME_SERIES_{interval.upper()}&symbol={stock_symbol}&apikey={self.api_key}"
+        return f"{self.base_url}?function={interval}&symbol={stock_symbol.upper()}&apikey={self.api_key}"
 
     def fetch_data_from_api(self, url: str) -> dict:
         """
@@ -62,7 +62,9 @@ class HistoricalDataFetcher:
         try:
             response = requests.get(url)
             response.raise_for_status()
+            print (response.json())
             return response.json()
+        
         except requests.RequestException as e:
             raise requests.RequestException(f"Error fetching data from API: {e}")
 
@@ -75,19 +77,23 @@ class HistoricalDataFetcher:
 
         Returns:
             pd.DataFrame: Processed data as a DataFrame.
-
-        Raises:
-            KeyError: If the expected keys are missing in the response.
         """
         try:
-            # Adjust the parsing logic according to the API's response structure
+            # Extract the "Monthly Time Series" data from the response
+            time_series = api_response.get("Monthly Time Series", {})
+            
+            # Process each date entry in the time series
             data = [
-                {'date': entry['date'], 'price': entry['value']}
-                for entry in api_response['data']
+                {"date": date, "price": float(info["1. open"])}
+                for date, info in time_series.items()
             ]
+            
+            # Convert the processed data into a Pandas DataFrame
             return pd.DataFrame(data)
         except KeyError as e:
             raise KeyError(f"Error processing data: Missing key {e}")
+        except Exception as e:
+            raise ValueError(f"Unexpected error while processing data: {e}")
 
     def save_to_csv(self, df: pd.DataFrame):
         """

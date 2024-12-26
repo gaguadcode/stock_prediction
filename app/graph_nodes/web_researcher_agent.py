@@ -1,7 +1,7 @@
 from langchain_community.document_loaders import WikipediaLoader
 from langchain_ollama import OllamaLLM
-from model_inference import GradientBoostingWorkflow  # Import Gradient Boosting Workflow
-from stock_fetch_data import HistoricalDataFetcher  # Import the HistoricalDataFetcher
+from app.graph_nodes.model_inference import GradientBoostingWorkflow  # Import Gradient Boosting Workflow
+from app.graph_nodes.stock_fetch_data import HistoricalDataFetcher  # Import the HistoricalDataFetcher
 import pandas as pd
 
 
@@ -90,7 +90,7 @@ class StockResearchAgent:
             ml_training_data = pd.read_csv(self.data_fetcher.output_data)
 
             # Extract the `date_target` field and prepare it as `ml_new_data`
-            ml_new_data = pd.DataFrame({"date": [agent_output["date_target"]]})
+            ml_new_data = pd.DataFrame({"date": agent_output["date_target"]})
 
             # Step 2: Fetch Wikipedia Summary
             stock_name = agent_output["stock_symbol"]
@@ -100,7 +100,7 @@ class StockResearchAgent:
 
             # Step 3: Execute Gradient Boosting Workflow
             print("Executing machine learning workflow...")
-            mse, predictions = self.workflow.execute_workflow(ml_training_data, ml_new_data)
+            mse, predictions = self.workflow.execute_workflow(ml_new_data)
             print(f"Mean Squared Error: {mse}")
             print(f"Predicted Prices: {predictions}")
 
