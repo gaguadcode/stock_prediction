@@ -26,7 +26,13 @@ This project provides a streamlined workflow for processing natural language que
    pip install -r requirements.txt
    ~~~
 
-3. **Run the Streamlit app**:
+3. **Configure .env file**:
+   Configure the .env file with the following variables:
+   ALPHAVANTAGE_API_KEY = "XXXXX"
+   ALPHAVANTAGE_BASE_URL = "https://www.alphavantage.co/query"
+   OUTPUT_CSV = "app/db/stock_data.csv"  
+
+4. **Run the Streamlit app**:
    ~~~bash
    streamlit run app.py
    ~~~
