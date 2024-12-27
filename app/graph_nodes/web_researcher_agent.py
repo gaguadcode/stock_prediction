@@ -2,6 +2,7 @@ from langchain_community.document_loaders import WikipediaLoader
 from langchain_ollama import OllamaLLM
 from app.graph_nodes.model_inference import GradientBoostingWorkflow  # Import Gradient Boosting Workflow
 from app.graph_nodes.stock_fetch_data import HistoricalDataFetcher  # Import the HistoricalDataFetcher
+from app.utils.logger import get_logger
 import pandas as pd
 
 
@@ -19,23 +20,30 @@ class StockResearchAgent:
         Args:
             model_name (str): The name of the Ollama model to use. Default is 'llama2'.
         """
+        self.logger = get_logger(self.__class__.__name__)  # Initialize logger
         self.model_name = model_name
+        self.logger.info(f"Initializing StockResearchAgent with model '{model_name}'")
         self.llm = OllamaLLM(model=model_name)
         self.workflow = GradientBoostingWorkflow(granularity='monthly', date_column='date', target_column='price')
-        self.data_fetcher = HistoricalDataFetcher()  # Initialize the HistoricalDataFetcher
+        self.data_fetcher = HistoricalDataFetcher()
 
     def fetch_wikipedia_data(self, stock_name):
         """
         Fetch a summary of the given stock name from Wikipedia.
         """
         try:
+            self.logger.info(f"Fetching Wikipedia data for: {stock_name}")
             loader = WikipediaLoader(query=stock_name, load_max_docs=1)
             docs = loader.load()
             if docs:
-                return docs[0].metadata.get("summary", "No summary available.")
+                summary = docs[0].metadata.get("summary", "No summary available.")
+                self.logger.debug(f"Wikipedia summary fetched: {summary}")
+                return summary
             else:
+                self.logger.warning(f"No Wikipedia page found for stock: {stock_name}")
                 return "No Wikipedia page found for this stock."
         except Exception as e:
+            self.logger.error(f"Error fetching Wikipedia data: {e}")
             return f"Error fetching data: {e}"
 
     def generate_response(self, stock_name, wikipedia_summary, mse, predictions):
@@ -51,6 +59,7 @@ class StockResearchAgent:
         Returns:
             str: The detailed response combining Wikipedia data and workflow results.
         """
+        self.logger.info(f"Generating response for stock: {stock_name}")
         prompt = f"""
         You are an expert financial researcher. Based on the following information, provide a detailed analysis of {stock_name}:
 
@@ -65,12 +74,13 @@ class StockResearchAgent:
         """
         try:
             response = self.llm.invoke(prompt)
+            self.logger.debug(f"Generated response: {response}")
             return response
         except Exception as e:
+            self.logger.error(f"Error generating response: {e}")
             return f"Error generating response: {e}"
 
     async def run(self, agent_output):
-        
         """
         Executes the stock research workflow, fetching data, combining Wikipedia and ML results.
 
@@ -81,31 +91,32 @@ class StockResearchAgent:
             dict: A dictionary containing the original agent_output fields and an additional 'generative_response'.
         """
         try:
+            self.logger.info("Starting StockResearchAgent workflow...")
+
             # Step 1: Fetch Historical Data
-            print("Fetching historical stock data...")
+            self.logger.info("Fetching historical stock data...")
             validated_output = await self.data_fetcher.fetch_and_save_historical_data(agent_output)
-            print(f"Validated Agent Output: {validated_output}")
+            self.logger.info("Historical data fetched successfully.")
 
             # Load historical data from CSV for machine learning
             ml_training_data = pd.read_csv(self.data_fetcher.output_data)
+            self.logger.debug(f"Loaded historical data:\n{ml_training_data.head()}")
 
             # Extract the `date_target` field and prepare it as `ml_new_data`
             ml_new_data = pd.DataFrame({"date": agent_output["date_target"]})
 
             # Step 2: Fetch Wikipedia Summary
             stock_name = agent_output["stock_symbol"]
-            print(f"Fetching Wikipedia summary for: {stock_name}...")
+            self.logger.info(f"Fetching Wikipedia summary for: {stock_name}")
             wikipedia_summary = self.fetch_wikipedia_data(stock_name)
-            print(f"Resumen de Wikipedia: {wikipedia_summary}")
 
             # Step 3: Execute Gradient Boosting Workflow
-            print("Executing machine learning workflow...")
+            self.logger.info("Executing machine learning workflow...")
             mse, predictions = self.workflow.execute_workflow(ml_new_data)
-            print(f"Mean Squared Error: {mse}")
-            print(f"Predicted Prices: {predictions}")
+            self.logger.info(f"Workflow completed. MSE: {mse}, Predictions: {predictions}")
 
             # Step 4: Generate Final Response
-            print("Generating detailed response...")
+            self.logger.info("Generating detailed response...")
             response = self.generate_response(stock_name, wikipedia_summary, mse, predictions)
 
             # Step 5: Return enhanced agent_output
@@ -113,9 +124,11 @@ class StockResearchAgent:
                 **agent_output,  # Include all fields from the original agent_output
                 "generative_response": response,  # Add the generative response
             }
+            self.logger.info("StockResearchAgent workflow completed successfully.")
             return agent_output_with_response
 
         except Exception as e:
+            self.logger.error(f"Error in StockResearchAgent workflow: {e}")
             return {
                 **agent_output,  # Preserve the original agent_output fields
                 "generative_response": f"Error in StockResearchAgent workflow: {e}",

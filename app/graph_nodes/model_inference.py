@@ -4,9 +4,11 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from app.utils.config import config
+from app.utils.logger import get_logger
 
 class GradientBoostingWorkflow:
     def __init__(self, granularity='monthly', date_column='date', target_column='price'):
+        self.logger = get_logger(self.__class__.__name__)
         self.granularity = granularity
         self.date_column = date_column
         self.target_column = target_column
@@ -20,32 +22,32 @@ class GradientBoostingWorkflow:
         Load the CSV file into a pandas DataFrame.
         """
         try:
-            print("\n[DEBUG] Loading data from CSV...")
+            self.logger.info("Loading data from CSV...")
             dataframe = pd.read_csv(self.data_path)
             if dataframe.empty:
                 raise ValueError("The loaded CSV file is empty.")
-            print("\n[DEBUG] Data loaded successfully. First few rows:")
-            print(dataframe.head())  # Debug: Check the first few rows
+            self.logger.info("Data loaded successfully. First few rows:")
+            self.logger.debug("\n%s", dataframe.head())  # Debug-level logging for data
             self.data = dataframe
         except FileNotFoundError:
-            raise FileNotFoundError(f"CSV file not found at the path: {self.data_path}")
+            self.logger.error("CSV file not found at the path: %s", self.data_path)
+            raise
         except Exception as e:
-            raise Exception(f"An error occurred while loading the CSV file: {e}")
+            self.logger.error("An error occurred while loading the CSV file: %s", e)
+            raise
 
     def transform_dates(self, dataframe):
         """
         Transforms the date column into machine-learning-friendly features.
         """
         try:
-            # Ensure the date_column exists
+            self.logger.info("Transforming date column into features...")
             if self.date_column not in dataframe.columns:
                 raise ValueError(f"Date column '{self.date_column}' is missing from the dataframe.")
 
-            # Convert the date column to datetime
             dataframe[self.date_column] = pd.to_datetime(dataframe[self.date_column])
             dataframe['year'] = dataframe[self.date_column].dt.year
 
-            # Add features based on the specified granularity
             if self.granularity == 'monthly':
                 dataframe['month'] = dataframe[self.date_column].dt.month
                 dataframe['month_sin'] = np.sin(2 * np.pi * dataframe['month'] / 12)
@@ -59,40 +61,37 @@ class GradientBoostingWorkflow:
                 dataframe['day_sin'] = np.sin(2 * np.pi * dataframe['day'] / 31)
                 dataframe['day_cos'] = np.cos(2 * np.pi * dataframe['day'] / 31)
 
-            # Drop the original date column
             dataframe = dataframe.drop(columns=[self.date_column])
+            self.logger.info("Date transformation complete.")
             return dataframe
-
         except Exception as e:
-            raise Exception(f"An error occurred in transform_dates: {e}")
+            self.logger.error("An error occurred in transform_dates: %s", e)
+            raise
 
     def preprocess_data(self):
         """
         Prepares the features (X) and target (y) for training.
         """
-        print("\n[DEBUG] Preprocessing data...")
+        self.logger.info("Preprocessing data...")
         data_transformed = self.transform_dates(self.data)
         X = data_transformed.drop(columns=[self.target_column])
         y = data_transformed[self.target_column]
-        print("\n[DEBUG] Preprocessed data:")
-        print("Features (X):")
-        print(X.head())
-        print("Target (y):")
-        print(y.head())
+        self.logger.debug("Features (X):\n%s", X.head())
+        self.logger.debug("Target (y):\n%s", y.head())
         return X, y
 
     def split_data(self, X, y, test_size=0.2, random_state=42):
         """
         Splits the data into training and testing sets.
         """
-        print("\n[DEBUG] Splitting data into train and test sets...")
+        self.logger.info("Splitting data into train and test sets...")
         return train_test_split(X, y, test_size=test_size, random_state=random_state)
 
     def train_model(self, X_train, y_train, random_state=42, n_estimators=100, learning_rate=0.1, max_depth=3):
         """
         Trains a Gradient Boosting regression model.
         """
-        print("\n[DEBUG] Training the Gradient Boosting model...")
+        self.logger.info("Training the Gradient Boosting model...")
         self.model = GradientBoostingRegressor(
             random_state=random_state,
             n_estimators=n_estimators,
@@ -100,30 +99,31 @@ class GradientBoostingWorkflow:
             max_depth=max_depth
         )
         self.model.fit(X_train, y_train)
-        print("\n[DEBUG] Model training complete.")
+        self.logger.info("Model training complete.")
 
     def evaluate_model(self, X_test, y_test):
         """
         Evaluates the model using Mean Squared Error.
         """
         if self.model is None:
+            self.logger.error("Model is not trained yet!")
             raise ValueError("Model is not trained yet!")
-        print("\n[DEBUG] Evaluating the model...")
+        self.logger.info("Evaluating the model...")
         y_pred = self.model.predict(X_test)
         self.mse = mean_squared_error(y_test, y_pred)
-        print(f"Mean Squared Error: {self.mse}")
+        self.logger.info("Mean Squared Error: %.4f", self.mse)
 
     def make_predictions(self, new_data):
         """
         Transforms new data and makes predictions using the trained model.
         """
         if self.model is None:
+            self.logger.error("Model is not trained yet!")
             raise ValueError("Model is not trained yet!")
-        print("\n[DEBUG] Making predictions for new data...")
+        self.logger.info("Making predictions for new data...")
         new_data_transformed = self.transform_dates(new_data)
         predictions = self.model.predict(new_data_transformed)
-        print("\n[DEBUG] Predictions:")
-        print(predictions[:5])  # Show the first few predictions
+        self.logger.debug("Predictions: %s", predictions[:5])  # Show the first few predictions
         return predictions
 
     def execute_workflow(self, new_data):
@@ -136,12 +136,12 @@ class GradientBoostingWorkflow:
         Returns:
             tuple: (mse, predictions)
         """
-        print("\n[DEBUG] Starting workflow execution...")
+        self.logger.info("Starting workflow execution...")
         self.load_data()
         X, y = self.preprocess_data()
         X_train, X_test, y_train, y_test = self.split_data(X, y)
         self.train_model(X_train, y_train)
         self.evaluate_model(X_test, y_test)
         predictions = self.make_predictions(new_data)
-        print("\n[DEBUG] Workflow execution complete.")
+        self.logger.info("Workflow execution complete.")
         return self.mse, predictions
