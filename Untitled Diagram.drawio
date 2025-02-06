@@ -28,8 +28,14 @@
         <mxCell id="08SMgyBRt8ykKjq59Ych-9" value="" style="ellipse;whiteSpace=wrap;html=1;rotation=90;" vertex="1" parent="1">
           <mxGeometry x="297.5" y="570" width="445" height="170" as="geometry" />
         </mxCell>
+        <mxCell id="08SMgyBRt8ykKjq59Ych-25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="08SMgyBRt8ykKjq59Ych-10" target="08SMgyBRt8ykKjq59Ych-11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
         <mxCell id="08SMgyBRt8ykKjq59Ych-10" value="entity extract" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
-          <mxGeometry x="480" y="460" width="80" height="80" as="geometry" />
+          <mxGeometry x="480" y="450" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="08SMgyBRt8ykKjq59Ych-23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="08SMgyBRt8ykKjq59Ych-11" target="08SMgyBRt8ykKjq59Ych-12">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="08SMgyBRt8ykKjq59Ych-11" value="data fetch" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
           <mxGeometry x="480" y="550" width="80" height="80" as="geometry" />
@@ -66,6 +72,9 @@
         </mxCell>
         <mxCell id="08SMgyBRt8ykKjq59Ych-22" value="research + reasoning" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="1">
           <mxGeometry x="170" y="420" width="140" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="08SMgyBRt8ykKjq59Ych-27" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="08SMgyBRt8ykKjq59Ych-12" target="08SMgyBRt8ykKjq59Ych-13">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
