@@ -1,7 +1,10 @@
 # Stock Research and Analysis App
 
 This project provides a streamlined workflow for processing natural language queries about stock prices and predictions. It extracts structured data from user input and generates detailed analysis reports using advanced models.
-
+### User Interface  
+![User Interface](/image1.png)
+ 
+![User Interface](/image2.png)
 ---
 
 ## Features

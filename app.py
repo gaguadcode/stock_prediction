@@ -49,8 +49,8 @@ input_text = st.text_area("Enter your query about stock prices or predictions:",
                           placeholder="E.g., 'quiero saber el precio de IBM de manera mensual para enero de 2025'")
 
 # Model selection
-extractor_model = st.selectbox("Select Stock Data Extractor Model:", ["mistral", "default_model"])
-research_model = st.selectbox("Select Stock Researcher Agent Model:", ["mistral", "default_model"])
+extractor_model = st.selectbox("Select Stock Data Extractor Model:", ["mistral", "smollm"])
+research_model = st.selectbox("Select Stock Researcher Agent Model:", ["mistral", "smollm"])
 
 # Process the input and display results
 if st.button("Analyze Stock"):
