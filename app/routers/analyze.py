@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Literal
-from app.graph_nodes import stock_extractor_agent  # Assuming it extracts data from text
+from app.graph_nodes.stock import stock_extractor_agent  # Assuming it extracts data from text
 from utils.datatypes import AnalysisResponse
 router = APIRouter()
 

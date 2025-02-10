@@ -1,5 +1,5 @@
-from app.graph_nodes.stock_extractor_agent import StockDataExtractor
-from app.graph_nodes.web_researcher_agent import StockResearchAgent
+from app.graph_nodes.stock.stock_extractor_agent import StockDataExtractor
+from app.graph_nodes.research.web_researcher_agent import StockResearchAgent
 import asyncio
 
 def process_and_analyze_stock(input_text: str, extractor_model="mistral", research_model="mistral"):

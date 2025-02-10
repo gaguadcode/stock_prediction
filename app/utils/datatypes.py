@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal, List
 from datetime import datetime
-
+from sklearn.ensemble import GradientBoostingRegressor
+from typing import Any
 
 # Shared validation function for date_target
 def validate_date_target(value):
@@ -26,13 +27,22 @@ def validate_date_target(value):
             raise ValueError(f"Invalid date format: {date_str}. Expected 'YYYY-MM-DD'.")
     return value
 
+class UserInputString(BaseModel):
+    user_input: str
 
+class ResearchOutput(BaseModel):
+    user_input: UserInputString
+    research_output: str
 # StockPredictionRequest model
-class StockPredictionRequest(BaseModel):
+class ReasoningOutput(BaseModel):
+    user_input: UserInputString
+    reasoning_output: str
+    
+class StockPredictionRequest(BaseModel): 
     stock_symbol: str
-    date_period: Literal["TIME_SERIES_MONTHLY", "TIME_SERIES_WEEKLY", "TIME_SERIES_DAILY"]  # Only these values are valid
+    date_period: Literal["TIME_SERIES_MONTHLY", "TIME_SERIES_WEEKLY", "TIME_SERIES_DAILY"]
     date_target: List[str] = Field(
-        ...,  # Required field
+        ...,  
         description="A list of target dates in 'YYYY-MM-DD' format (e.g., ['2025-01-01', '2025-02-01']).",
     )
 
@@ -40,7 +50,27 @@ class StockPredictionRequest(BaseModel):
     def validate_date_target(cls, value):
         return validate_date_target(value)
 
+class EntityExtractOutput(BaseModel):
+    user_input: str
+    stock_prediction: StockPredictionRequest
 
+class DataFetchOutput(BaseModel):
+    entity_extract:EntityExtractOutput
+    database_url: str
+
+class FinalPredictionState(BaseModel):
+    entity_extract: DataFetchOutput
+    mse: float  # Mean Squared Error of the model
+
+class StockPredictionOutput(BaseModel):
+    """
+    This model holds the full prediction output, including metadata, model, 
+    and predictions.
+    """
+    entity_extract: FinalPredictionState  # Contains all necessary metadata
+    predictions: List[float]  # The predicted stock prices
+
+'''
 # AnalysisResponse model
 class AnalysisResponse(BaseModel):
     generative_response: str
@@ -54,3 +84,4 @@ class AnalysisResponse(BaseModel):
     @field_validator("date_target", mode="before")
     def validate_date_target(cls, value):
         return validate_date_target(value)
+'''
