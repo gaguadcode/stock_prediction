@@ -2,7 +2,7 @@
 
 This project provides a streamlined workflow for processing natural language queries about stock prices and predictions. It extracts structured data from user input and generates detailed analysis reports using advanced models.
 
-![Stock Research and Analysis](image.png)
+![Stock Research and Analysis](/image.png)
 ---
 
 ## Features
