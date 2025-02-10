@@ -102,6 +102,19 @@ print(final_report)
 
 ---
 
+## Langsmith for Tracing
+
+
+To enable **Langsmith Tracing** for debugging and monitoring your application's language model interactions, configure your `.env` file with the following variables:
+
+![Langsmith gui](/langsmith.png)
+
+LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
+LANGSMITH_API_KEY="your_api_key_here"
+LANGSMITH_PROJECT="stock-prediction-app"
+
+
 ## Requirements
 
 - Python 3.7+
