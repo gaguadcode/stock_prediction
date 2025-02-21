@@ -71,14 +71,7 @@ class StockDataExtractor:
 
     def process_input(self, input_data: UserInputString) -> EntityExtractOutput:
         """
-        Processes the input natural language and returns a structured `StockPredictionRequest` 
-        with `user_input` as the first key.
-
-        Args:
-            input_data (UserInputString): The input model containing user input.
-
-        Returns:
-            StockPredictionRequest: Extracted structured information with user input at the top.
+        Processes the input natural language and returns a structured `EntityExtractOutput`.
         """
         try:
             self.logger.info("Processing input text...")
@@ -100,14 +93,13 @@ class StockDataExtractor:
             self.logger.info("Input processed successfully.")
             self.logger.info(f"Extracted data: {extracted_data}")
 
-            # Inject user_input at the beginning of the structured data
-            extracted_data["user_input"] = input_text  
-            stock_prediction = StockPredictionRequest(**extracted_data)
-            # Validate and return structured output
+            # ✅ Corrected: Return fields directly instead of nesting inside `stock_prediction`
             return EntityExtractOutput(
-            user_input=input_text,
-            stock_prediction=stock_prediction
-        )
+                user_input=input_text,  # Keep user input
+                stock_symbol=extracted_data["stock_symbol"],
+                date_period=extracted_data["date_period"],
+                date_target=extracted_data["date_target"]
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to process natural language input: {e}")

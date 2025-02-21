@@ -1,5 +1,4 @@
 import pickle
-import io
 import redis
 import pandas as pd
 import numpy as np
@@ -9,7 +8,6 @@ from sklearn.metrics import mean_squared_error
 from sqlalchemy import create_engine
 from app.utils.logger import get_logger
 from app.utils.datatypes import DataFetchOutput, FinalPredictionState
-
 
 class StockDataTrainer:
     """
@@ -49,6 +47,7 @@ class StockDataTrainer:
 
         try:
             df = pd.read_sql(query, engine)
+            print(df.head())
             if df.empty:
                 raise ValueError("No data retrieved from database.")
             self.logger.info(f"Fetched {len(df)} rows from database.")
@@ -89,10 +88,23 @@ class StockDataTrainer:
         """
         Prepares the features (X) and target (y) for training.
         """
+        self.logger.info("Preprocessing data...")
+
+        # ✅ Transform date features
         df_transformed = self.transform_dates(df, granularity)
-        X = df_transformed.drop(columns=[self.target_column])
+
+        # ✅ Keep only numeric columns
+        X = df_transformed.drop(columns=[self.target_column], errors="ignore")
+        X = X.select_dtypes(include=[np.number])  # ✅ Keep only numeric features
+
+        # ✅ Extract target variable
         y = df_transformed[self.target_column]
+
+        self.logger.debug("Features (X):\n%s", X.head())
+        self.logger.debug("Target (y):\n%s", y.head())
+
         return X, y
+
 
     def train_model(self, X_train, y_train):
         """
@@ -144,25 +156,28 @@ class StockDataTrainer:
         """
         Fetches data, preprocesses, trains the model, saves it in Redis, and returns the trained model and MSE.
         """
-        # Dynamically determine the granularity
-        granularity = self.get_granularity(data_fetch_output.entity_extract.stock_prediction.date_period)
+        #  Get granularity directly from `data_fetch_output`
+        granularity = self.get_granularity(data_fetch_output.date_period)
         self.logger.info(f"Using granularity: {granularity}")
 
         # Fetch and preprocess data
         df = self.fetch_data_from_db(data_fetch_output.database_url)
         X, y = self.preprocess_data(df, granularity)
 
-        # Split data
+        #  Split data
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # Train and evaluate
         self.train_model(X_train, y_train)
         self.evaluate_model(X_test, y_test)
 
-        # Save model to Redis
         self.save_model_to_redis()
 
+        # Return FinalPredictionState (inherits all fields from DataFetchOutput)
         return FinalPredictionState(
-            entity_extract=data_fetch_output,
+            user_input=data_fetch_output.user_input,
+            stock_symbol=data_fetch_output.stock_symbol,
+            date_period=data_fetch_output.date_period,
+            date_target=data_fetch_output.date_target,
+            database_url=data_fetch_output.database_url,
             mse=self.mse
         )

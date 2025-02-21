@@ -50,24 +50,20 @@ class StockPredictionRequest(BaseModel):
     def validate_date_target(cls, value):
         return validate_date_target(value)
 
-class EntityExtractOutput(BaseModel):
+class EntityExtractOutput(StockPredictionRequest):
     user_input: str
-    stock_prediction: StockPredictionRequest
 
-class DataFetchOutput(BaseModel):
-    entity_extract:EntityExtractOutput
+class DataFetchOutput(EntityExtractOutput):
     database_url: str
 
-class FinalPredictionState(BaseModel):
-    entity_extract: DataFetchOutput
+class FinalPredictionState(DataFetchOutput):
     mse: float  # Mean Squared Error of the model
 
-class StockPredictionOutput(BaseModel):
+class StockPredictionOutput(FinalPredictionState):
     """
     This model holds the full prediction output, including metadata, model, 
     and predictions.
     """
-    entity_extract: FinalPredictionState  # Contains all necessary metadata
     predictions: List[float]  # The predicted stock prices
 
 '''

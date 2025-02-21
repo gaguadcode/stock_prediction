@@ -11,6 +11,7 @@ from app.utils.config import config
 from app.utils.datatypes import EntityExtractOutput, DataFetchOutput
 from app.utils.logger import get_logger
 
+
 class HistoricalDataFetcher:
     """
     A class to fetch, process, and store historical stock data based on EntityExtractOutput.
@@ -31,28 +32,29 @@ class HistoricalDataFetcher:
         Asynchronously create the database if it does not already exist.
         """
         try:
-            self.logger.info(f"Checking if database {db_name} exists...")
-            async with asyncpg.create_pool(dsn=self.postgres_url) as pool:
-                async with pool.acquire() as conn:
-                    exists = await conn.fetchval(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}';")
-                    if not exists:
-                        self.logger.info(f"Creating database: {db_name}")
-                        await conn.execute(f'CREATE DATABASE "{db_name}";')
-                        self.logger.info(f"Database {db_name} created successfully.")
+            self.logger.info(f"Checking if database '{db_name}' exists...")
+
+            # Connect to the 'postgres' database
+            conn = await asyncpg.connect(dsn="postgresql://gustavo:password@localhost/postgres")
+
+            # Check if the database exists
+            exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1;", db_name)
+
+            if not exists:
+                self.logger.info(f"Creating database: {db_name}")
+                await conn.execute(f'CREATE DATABASE "{db_name}";')
+                self.logger.info(f"Database '{db_name}' created successfully.")
+
+            # Close the connection
+            await conn.close()
+
         except Exception as e:
-            self.logger.error(f"Error creating database {db_name}: {e}")
+            self.logger.error(f"Error creating database '{db_name}': {e}")
             raise
 
     def construct_api_url(self, stock_symbol: str, interval: str) -> str:
         """
         Construct the API URL using the stock symbol and interval.
-
-        Args:
-            stock_symbol (str): Stock symbol (e.g., 'AAPL').
-            interval (str): Time interval ('TIME_SERIES_DAILY', 'TIME_SERIES_WEEKLY', 'TIME_SERIES_MONTHLY').
-
-        Returns:
-            str: The constructed API URL.
         """
         url = f"{self.base_url}?function={interval}&symbol={stock_symbol.upper()}&apikey={self.api_key}"
         self.logger.debug(f"Constructed API URL: {url}")
@@ -61,15 +63,6 @@ class HistoricalDataFetcher:
     def fetch_data_from_api(self, url: str) -> dict:
         """
         Fetch data from the external API.
-
-        Args:
-            url (str): API endpoint URL.
-
-        Returns:
-            dict: JSON response from the API.
-
-        Raises:
-            requests.RequestException: If the API call fails.
         """
         try:
             self.logger.info(f"Fetching data from API: {url}")
@@ -84,13 +77,6 @@ class HistoricalDataFetcher:
     def process_api_response(self, api_response: dict, stock_symbol: str) -> pd.DataFrame:
         """
         Process and structure the API response into a Pandas DataFrame.
-
-        Args:
-            api_response (dict): JSON response from the API.
-            stock_symbol (str): Stock symbol for labeling data.
-
-        Returns:
-            pd.DataFrame: Processed data as a DataFrame.
         """
         try:
             self.logger.info("Processing API response...")
@@ -116,12 +102,7 @@ class HistoricalDataFetcher:
     def store_to_database(self, df: pd.DataFrame, db_name: str):
         """
         Stores the processed DataFrame into a dynamically created PostgreSQL database.
-
-        Args:
-            df (pd.DataFrame): The DataFrame containing stock historical data.
-            db_name (str): The name of the database.
         """
-        # Define the database connection URL for this execution
         db_url = f"postgresql://gustavo:password@localhost/{db_name}"
         engine = create_engine(db_url)
         SessionLocal = sessionmaker(bind=engine)
@@ -141,6 +122,7 @@ class HistoricalDataFetcher:
         db_session = SessionLocal()
         try:
             self.logger.info(f"Storing data in database {db_name}...")
+
             for _, row in df.iterrows():
                 record = StockHistoricalData(
                     id=str(row["date"].strftime("%Y%m%d") + row["stock_symbol"]),
@@ -148,40 +130,36 @@ class HistoricalDataFetcher:
                     date=row["date"],
                     price=row["price"]
                 )
-                db_session.add(record)
+
+                # Use `merge()` to update existing records instead of causing duplicates
+                db_session.merge(record)
+
             db_session.commit()
             self.logger.info(f"Data successfully stored in database {db_name}.")
+
         except Exception as e:
             db_session.rollback()
             self.logger.error(f"Database error in {db_name}: {e}")
+
         finally:
             db_session.close()
 
     def fetch_and_store_historical_data(self, entity_extract_output: EntityExtractOutput) -> DataFetchOutput:
         """
         Process EntityExtractOutput, fetch data, store in DB, and return DataFetchOutput.
-
-        Args:
-            entity_extract_output (EntityExtractOutput): Extracted stock information.
-
-        Returns:
-            DataFetchOutput: Processed data along with the database URL.
         """
         self.logger.info("Processing entity extract output...")
 
-        # Extract validated request
-        stock_prediction = entity_extract_output.stock_prediction
-
         # Construct database name based on stock symbol and time series type
-        db_name = f"{stock_prediction.stock_symbol.lower()}_{stock_prediction.date_period.lower()}"
+        db_name = f"{entity_extract_output.stock_symbol.lower()}_{entity_extract_output.date_period.lower()}"
 
         # Run async database creation synchronously
         asyncio.run(self.create_database_if_not_exists(db_name))
 
         # Fetch data
-        url = self.construct_api_url(stock_prediction.stock_symbol, stock_prediction.date_period)
+        url = self.construct_api_url(entity_extract_output.stock_symbol, entity_extract_output.date_period)
         api_response = self.fetch_data_from_api(url)
-        df = self.process_api_response(api_response, stock_prediction.stock_symbol)
+        df = self.process_api_response(api_response, entity_extract_output.stock_symbol)
 
         # Store to database
         self.store_to_database(df, db_name)
@@ -190,4 +168,9 @@ class HistoricalDataFetcher:
         database_url = f"postgresql://gustavo:password@localhost/{db_name}"
 
         # Return DataFetchOutput
-        return DataFetchOutput(entity_extract=entity_extract_output, database_url=database_url)
+        return DataFetchOutput(
+        user_input=entity_extract_output.user_input,  # Keep user input
+        stock_symbol=entity_extract_output.stock_symbol,
+        date_period=entity_extract_output.date_period,
+        date_target=entity_extract_output.date_target,
+        database_url=database_url)
