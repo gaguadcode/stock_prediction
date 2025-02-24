@@ -13,4 +13,5 @@ numpy
 scikit-learn
 sqlalchemy
 pillow
-
+redis
+google-generativeai

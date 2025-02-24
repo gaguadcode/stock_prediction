@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal, List
 from datetime import datetime
-from sklearn.ensemble import GradientBoostingRegressor
 from typing import Any
 
 # Shared validation function for date_target
