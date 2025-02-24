@@ -5,7 +5,7 @@ from app.utils.logger import get_logger
 from pydantic import BaseModel, Field
 from typing import List, Literal
 from app.utils.datatypes import UserInputString, StockPredictionRequest, EntityExtractOutput
-
+from app.utils.config import config
 import json
 
 # Define input and output Pydantic model
@@ -16,7 +16,7 @@ class StockDataExtractor:
     and extract structured stock prediction information.
     """
 
-    def __init__(self, model_name: str = "mistral:7b"):
+    def __init__(self):
         """
         Initializes the StockDataExtractor with the specified Ollama model.
 
@@ -24,7 +24,7 @@ class StockDataExtractor:
             model_name (str): The name of the Ollama model to use. Default is 'mistral'.
         """
         self.logger = get_logger(self.__class__.__name__)  # Initialize logger
-        self.model_name = model_name
+        self.model_name = config.ENTITY_EXTRACTION_MODEL
         self.logger.info(f"Initializing StockDataExtractor with model '{self.model_name}'")
         self.agent = self.initialize_llm()
 

@@ -1,7 +1,10 @@
 from app.utils.llm import BaseLLM
 from typing import Type
 import sys
-
+import ollama
+import google.generativeai as genai
+from app.utils.config import config
+'''
 IMPORTS = {}
 # Try importing each module individually and print specific errors if they fail
 for module_name in ["openai", "anthropic", "cohere", "ollama"]:
@@ -9,55 +12,30 @@ for module_name in ["openai", "anthropic", "cohere", "ollama"]:
         IMPORTS[module_name] = __import__(module_name)
     except ImportError:
         raise ImportError(f"Missing module '{module_name}'. Install it using: pip install {module_name}")
+'''
 
 
-
-class OpenAILLM(BaseLLM):
-    """Wrapper for OpenAI LLM"""
     
-    def __init__(self, model_name="gpt-4", temperature=0.7):
+class GoogleGeminiLLM(BaseLLM):
+    """Wrapper for Google Gemini AI"""
+
+    def __init__(self, model_name="gemini-pro", temperature=0.7):
+        # ✅ Configure the API Key
+        genai.configure(api_key=config.GOOGLE_GEMINI_API_KEY)
         self.model_name = model_name
         self.temperature = temperature
 
     def generate(self, prompt: str) -> str:
-        response = openai.ChatCompletion.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=self.temperature
+        """Generate text using Google Gemini API"""
+        model = genai.GenerativeModel(self.model_name)
+        
+        response = model.generate_content(
+            prompt,
+            generation_config={"temperature": self.temperature}
         )
-        return response["choices"][0]["message"]["content"].strip()
 
-class CohereLLM(BaseLLM):
-    """Wrapper for Cohere AI"""
-    
-    def __init__(self, model_name="command-r", temperature=0.7):
-        self.client = cohere.Client("YOUR_COHERE_API_KEY")
-        self.model_name = model_name
-        self.temperature = temperature
+        return response.text.strip() if response and hasattr(response, "text") else "No response from Gemini"
 
-    def generate(self, prompt: str) -> str:
-        response = self.client.generate(
-            model=self.model_name,
-            prompt=prompt,
-            temperature=self.temperature
-        )
-        return response.generations[0].text.strip()
-
-class AnthropicLLM(BaseLLM):
-    """Wrapper for Anthropic Claude"""
-
-    def __init__(self, model_name="claude-2", temperature=0.7):
-        self.client = anthropic.Anthropic()
-        self.model_name = model_name
-        self.temperature = temperature
-
-    def generate(self, prompt: str) -> str:
-        response = self.client.completions.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=self.temperature
-        )
-        return response.completion.strip()
 
 class OllamaLLM(BaseLLM):
     """Wrapper for Ollama LLM"""
@@ -78,10 +56,8 @@ class LLMSelector:
     @staticmethod
     def get_llm(provider: str, **kwargs) -> BaseLLM:
         providers = {
-            "openai": OpenAILLM,
-            "anthropic": AnthropicLLM,
-            "cohere": CohereLLM,
-            "ollama": OllamaLLM,    
+            "ollama": OllamaLLM,
+            "google": GoogleGeminiLLM,
         }
         if provider.lower() not in providers:
             raise ValueError(f"Unsupported LLM provider: {provider}")

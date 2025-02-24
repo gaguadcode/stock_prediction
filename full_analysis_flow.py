@@ -39,7 +39,7 @@ def process_and_analyze_stock(input_text: str, extractor_model="mistral", resear
 
 if __name__ == "__main__":
     # Input text in Spanish
-    input_text = "quiero saber el precio de IBM de manera mensual para enero de 2025"
+    input_text = "quiero saber el price de IBM de manera mensual para enero de 2025"
 
     # Run the process_and_analyze_stock function with the provided input
     try:

@@ -28,14 +28,13 @@ def validate_date_target(value):
     return value
 
 class UserInputString(BaseModel):
+    next_state: str
     user_input: str
 
-class ResearchOutput(BaseModel):
-    user_input: UserInputString
+class ResearchOutput(UserInputString):
     research_output: str
 # StockPredictionRequest model
-class ReasoningOutput(BaseModel):
-    user_input: UserInputString
+class ReasoningOutput(UserInputString):
     reasoning_output: str
     
 class StockPredictionRequest(BaseModel): 
