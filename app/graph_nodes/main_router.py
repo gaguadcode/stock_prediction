@@ -1,8 +1,9 @@
-from langchain_ollama import OllamaLLM
+import re
+from app.utils.llm_wrappers import LLMSelector  # ✅ Import LLM selector factory
 from app.utils.logger import get_logger
 from app.utils.datatypes import UserInputString
-import re
 from app.utils.config import config
+
 # ✅ Initialize Logger
 logger = get_logger("MainRouterNode")
 
@@ -15,13 +16,15 @@ class MainRouterNode:
     def __init__(self):
         """
         Initializes components needed for routing.
+        Dynamically selects an LLM based on the configured provider.
         """
         self.stock_keywords = {"stock", "price", "share", "market", "invest", "trading"}
         self.research_keywords = {"what is", "explain", "define", "history of"}
         self.reasoning_keywords = {"impact", "analyze", "predict", "reasoning", "effect of"}
 
-        # ✅ Initialize DeepSeek LLM for Routing Validation
-        self.llm = OllamaLLM(model=config.ROUTING_MODEL)
+        # ✅ Dynamically select LLM provider
+        logger.info(f"Initializing LLM provider: {config.LLM_PROVIDER}")
+        self.llm = LLMSelector.get_llm(provider=config.LLM_PROVIDER, model_name=config.ROUTING_MODEL)
 
         logger.info("MainRouterNode initialized.")
 
@@ -42,10 +45,10 @@ class MainRouterNode:
 
     def llm_based_routing(self, user_input: str) -> str:
         """
-        Uses DeepSeek LLM to analyze user input and determine the appropriate route.
+        Uses an LLM (Google Gemini, Ollama, OpenAI) to analyze user input and determine the appropriate route.
         Ensures the LLM only returns a valid route and removes unwanted text.
         """
-        logger.info("Calling DeepSeek LLM for routing decision...")
+        logger.info(f"Calling {config.LLM_PROVIDER} for routing decision...")
 
         prompt = f"""
         Given the following user input:
@@ -60,7 +63,7 @@ class MainRouterNode:
         **Respond only with one of these exact words: "entity_extraction", "researcher", or "reasoning". No explanation, no reasoning, just the word.**
         """
 
-        response = self.llm.invoke(prompt).strip().lower()
+        response = self.llm.generate(prompt).strip().lower()
 
         # ✅ Extract only the first valid response (preventing full explanations)
         match = re.search(r"\b(entity_extraction|researcher|reasoning)\b", response)
@@ -75,9 +78,9 @@ class MainRouterNode:
         """
         Uses a hybrid approach:
         1. **Keyword Matching**
-        2. **DeepSeek LLM Validation**
+        2. **LLM-Based Routing Validation**
         
-        ✅ Returns a dictionary with the route AND original UserInputString.
+        ✅ Returns an updated UserInputString with routing information.
         """
         fast_route = self.keyword_based_routing(initial_state.user_input)
         logger.info(f"Keyword-based Routing Suggests: {fast_route}")
@@ -88,5 +91,6 @@ class MainRouterNode:
             final_route = fast_route
 
         logger.info(f"Final Route Selected: {final_route}")
+
         # ✅ Return BOTH the routing decision and UserInputString
-        return UserInputString(next_state=final_route, user_input=initial_state.user_input) 
+        return UserInputString(next_state=final_route, user_input=initial_state.user_input)

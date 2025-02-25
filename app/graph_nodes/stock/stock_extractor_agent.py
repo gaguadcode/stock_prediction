@@ -1,106 +1,89 @@
-from langchain.prompts import PromptTemplate
-from langchain_ollama import OllamaLLM  # Import Ollama LLM from langchain-ollama
-from app.utils.logger import get_logger
-#from app.utils import validate_date_target  # Ensure this function is imported
-from pydantic import BaseModel, Field
-from typing import List, Literal
-from app.utils.datatypes import UserInputString, StockPredictionRequest, EntityExtractOutput
-from app.utils.config import config
 import json
-
-# Define input and output Pydantic model
+import re
+from app.utils.logger import get_logger
+from app.utils.datatypes import UserInputString, EntityExtractOutput
+from app.utils.llm_wrappers import LLMSelector
+from app.utils.config import config
 
 class StockDataExtractor:
     """
-    A LangGraph-compatible class to process natural language input using LangChain's OllamaLLM 
-    and extract structured stock prediction information.
+    Processes natural language input to extract structured stock prediction data.
     """
 
     def __init__(self):
         """
-        Initializes the StockDataExtractor with the specified Ollama model.
-
-        Args:
-            model_name (str): The name of the Ollama model to use. Default is 'mistral'.
+        Initializes the StockDataExtractor with the appropriate LLM provider.
         """
-        self.logger = get_logger(self.__class__.__name__)  # Initialize logger
-        self.model_name = config.ENTITY_EXTRACTION_MODEL
-        self.logger.info(f"Initializing StockDataExtractor with model '{self.model_name}'")
-        self.agent = self.initialize_llm()
+        self.logger = get_logger(self.__class__.__name__)
+        self.logger.info(f"Initializing StockDataExtractor with model '{config.ENTITY_EXTRACTION_MODEL}'")
+        
+        # ✅ Dynamically select LLM (Google Gemini, OpenAI, Ollama)
+        self.agent = LLMSelector.get_llm(provider=config.LLM_PROVIDER, model_name=config.ENTITY_EXTRACTION_MODEL)
 
-    def initialize_llm(self) -> OllamaLLM:
+    def clean_python_dict_response(self, response: str) -> dict:
         """
-        Initialize the Ollama LLM agent.
-
-        Returns:
-            OllamaLLM: An instance of LangChain's OllamaLLM.
+        Cleans and extracts a valid Python dictionary from the LLM response.
+        Handles cases where the response contains Markdown-style formatting or additional text.
         """
         try:
-            self.logger.info("Initializing Ollama LLM...")
-            llm = OllamaLLM(model=self.model_name)
-            self.logger.info("Ollama LLM initialized successfully.")
-            return llm
+            self.logger.info(f"Raw response before parsing: {response}")
+
+            # ✅ Remove Markdown-style formatting (` ```python ... ``` ` or ` ``` `)
+            response = re.sub(r"```python\n?|```", "", response).strip()
+
+            # ✅ Convert the string response into a valid Python dictionary
+            extracted_data = eval(response)  # ⚠️ Use eval ONLY because we control the prompt
+
+            # ✅ Ensure all required keys exist
+            if not all(k in extracted_data for k in ["stock_symbol", "date_period", "date_target"]):
+                raise ValueError("Missing expected keys in Python dictionary response.")
+
+            return extracted_data
+
         except Exception as e:
-            self.logger.error(f"Failed to initialize Ollama LLM: {e}")
-            raise ValueError(f"Failed to initialize Ollama LLM: {e}")
+            self.logger.error(f"Python dictionary parsing failed: {e}")
+            raise ValueError(f"Invalid Python dictionary format: {response}")
 
     def construct_prompt(self, input_text: str) -> str:
         """
-        Constructs a prompt for the Ollama LLM to extract structured stock prediction data.
-
-        Args:
-            input_text (str): The natural language input.
-
-        Returns:
-            str: A formatted prompt ready for the LLM.
+        Constructs a structured prompt for the LLM to return a Python dictionary.
         """
         self.logger.info("Constructing prompt...")
-        prompt_template = PromptTemplate(
-            input_variables=["input_text"],
-            template=(
-                "Extract the stock symbol (company or commodity), prediction window (date_period) "
-                "(TIME_SERIES_MONTHLY, TIME_SERIES_WEEKLY, TIME_SERIES_DAILY...), and target date or dates of prediction from the following input:\n"
-                "{input_text}\n"
-                "Respond strictly in JSON format:\n"
-                "{{'stock_symbol': '...', 'date_period': '...', 'date_target':['YYYY-MM-DD',...]}}"
-            ),
+        prompt = (
+            "Extract the stock symbol (company or commodity), prediction window (date_period) "
+            "(TIME_SERIES_MONTHLY, TIME_SERIES_WEEKLY, TIME_SERIES_DAILY...), and target date or dates of prediction from the following input:\n"
+            f"{input_text}\n"
+            "Respond strictly in Python dictionary format (no Markdown, no extra text):\n"
+            "{'stock_symbol': '...', 'date_period': '...', 'date_target': ['YYYY-MM-DD', ...]}"
         )
-        prompt = prompt_template.format(input_text=input_text)
-        self.logger.debug(f"Prompt constructed: {prompt}")
         return prompt
 
     def process_input(self, input_data: UserInputString) -> EntityExtractOutput:
         """
-        Processes the input natural language and returns a structured `EntityExtractOutput`.
+        Processes user input and extracts structured stock prediction data.
         """
         try:
-            self.logger.info("Processing input text...")
+            self.logger.info(f"Processing input text: {input_data.user_input}")
 
-            # Extract raw user input
-            input_text = input_data.user_input
+            # ✅ Construct the prompt
+            prompt = self.construct_prompt(input_data.user_input)
 
-            # Construct the prompt
-            prompt = self.construct_prompt(input_text)
-
-            # Generate response using Ollama LLM
-            self.logger.info("Invoking Ollama LLM with the constructed prompt...")
-            agent = self.initialize_llm()
-            response = agent.invoke(prompt)
+            # ✅ Invoke LLM (Google Gemini, OpenAI, Ollama)
+            self.logger.info("Invoking LLM with the constructed prompt...")
+            response = self.agent.generate(prompt)
             self.logger.info(f"Response from LLM: {response}")
 
-            # Parse JSON response
-            extracted_data = json.loads(response.strip())  # Safer than eval
-            self.logger.info("Input processed successfully.")
-            self.logger.info(f"Extracted data: {extracted_data}")
+            # ✅ Clean and parse the Python dictionary response
+            extracted_data = self.clean_python_dict_response(response)
+            self.logger.info(f"Extracted structured data: {extracted_data}")
 
-            # ✅ Corrected: Return fields directly instead of nesting inside `stock_prediction`
             return EntityExtractOutput(
-                user_input=input_text,  # Keep user input
+                user_input=input_data.user_input,
                 stock_symbol=extracted_data["stock_symbol"],
                 date_period=extracted_data["date_period"],
                 date_target=extracted_data["date_target"]
             )
 
         except Exception as e:
-            self.logger.error(f"Failed to process natural language input: {e}")
-            raise ValueError(f"Failed to process natural language input: {e}")
+            self.logger.error(f"Failed to process input: {e}")
+            raise ValueError(f"Failed to process input: {e}")

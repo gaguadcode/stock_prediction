@@ -7,6 +7,7 @@ class Config(BaseSettings):
     RESEARCH_MODEL:str
     ROUTING_MODEL:str
     ENTITY_EXTRACTION_MODEL:str
+    LLM_PROVIDER:str
     langsmith_tracing: bool  # Change to correct type (bool instead of str if applicable)
     langsmith_endpoint: str
     langsmith_api_key: str

@@ -1,9 +1,10 @@
 import re
-from langchain_ollama import OllamaLLM  # Import Ollama LLM from langchain-ollama
-from langchain_community.document_loaders.wikipedia import WikipediaLoader  #Correct Import
+from app.utils.llm_wrappers import LLMSelector  # ✅ Import LLM selector
+from langchain_community.document_loaders.wikipedia import WikipediaLoader  # ✅ Corrected Import
 from app.utils.logger import get_logger
 from app.utils.datatypes import UserInputString, ResearchOutput
 from app.utils.config import config
+
 # ✅ Initialize logger
 logger = get_logger("ResearcherNode")
 
@@ -15,10 +16,14 @@ class ResearcherNode:
 
     def __init__(self):
         """
-        Initializes the Researcher Node with an LLM model.
+        Initializes the Researcher Node with a dynamically selected LLM.
         """
-        logger.info(f"Initializing ResearcherNode with LLM model: {config.RESEARCH_MODEL}")
-        self.llm = OllamaLLM(model=config.RESEARCH_MODEL)
+        logger.info(f"Initializing ResearcherNode with LLM provider: {config.LLM_PROVIDER}")
+
+        # ✅ Dynamically select LLM provider (Google Gemini, OpenAI, Ollama)
+        self.llm = LLMSelector.get_llm(provider=config.LLM_PROVIDER, model_name=config.RESEARCH_MODEL)
+
+        logger.info(f"ResearcherNode initialized with LLM: {config.LLM_PROVIDER}")
 
     def extract_topic(self, user_input: str) -> str:
         """
@@ -36,7 +41,7 @@ class ResearcherNode:
         """
         
         try:
-            response = self.llm.invoke(prompt).strip()
+            response = self.llm.generate(prompt).strip()
             logger.info(f"Extracted topic: {response}")
 
             if response.lower() == "none" or not response:
