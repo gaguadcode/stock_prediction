@@ -1,7 +1,7 @@
 import re
 from app.utils.llm_wrappers import LLMSelector  # ✅ Import LLM selector factory
 from app.utils.logger import get_logger
-from app.utils.datatypes import UserInputString
+from app.utils.datatypes import WorkflowState
 from app.utils.config import config
 
 # ✅ Initialize Logger
@@ -74,23 +74,27 @@ class MainRouterNode:
         logger.warning(f"LLM returned an unexpected response: {response}. Defaulting to 'reasoning'.")
         return "reasoning"  # Default fallback
     
-    def determine_route(self, initial_state: UserInputString) -> UserInputString:
+    def determine_route(self, state: WorkflowState) -> WorkflowState:
         """
         Uses a hybrid approach:
         1. **Keyword Matching**
         2. **LLM-Based Routing Validation**
         
-        ✅ Returns an updated UserInputString with routing information.
+        ✅ Returns an updated WorkflowState with routing information.
         """
-        fast_route = self.keyword_based_routing(initial_state.user_input)
+        fast_route = self.keyword_based_routing(state.user_input)
         logger.info(f"Keyword-based Routing Suggests: {fast_route}")
 
         if fast_route == "undecided":
-            final_route = self.llm_based_routing(initial_state.user_input)
+            final_route = self.llm_based_routing(state.user_input)
         else:
             final_route = fast_route
 
         logger.info(f"Final Route Selected: {final_route}")
 
-        # ✅ Return BOTH the routing decision and UserInputString
-        return UserInputString(next_state=final_route, user_input=initial_state.user_input)
+        # ✅ Fix: Ensure `next_state` does not appear twice
+        state_dict = state.model_dump()
+        state_dict.pop("next_state", None)  # ✅ Remove existing `next_state`
+
+        return WorkflowState(**state_dict, next_state=final_route)  # ✅ Safe update
+

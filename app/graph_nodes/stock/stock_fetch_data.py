@@ -6,15 +6,15 @@ from sqlalchemy import create_engine, Column, String, Float, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
 
-# Importing models
+# Importing configurations and utilities
 from app.utils.config import config
-from app.utils.datatypes import EntityExtractOutput, DataFetchOutput
+from app.utils.datatypes import WorkflowState
 from app.utils.logger import get_logger
 
 
 class HistoricalDataFetcher:
     """
-    A class to fetch, process, and store historical stock data based on EntityExtractOutput.
+    A class to fetch, process, and store historical stock data based on extracted entities.
     """
 
     def __init__(self):
@@ -25,14 +25,14 @@ class HistoricalDataFetcher:
         self.base_url = config.ALPHAVANTAGE_BASE_URL
         self.api_key = config.ALPHAVANTAGE_API_KEY
         self.postgres_url = "postgresql://gustavo:password@localhost/postgres"
-        self.logger.info("HistoricalDataFetcher initialized.")
+        self.logger.info("✅ HistoricalDataFetcher initialized.")
 
     async def create_database_if_not_exists(self, db_name: str):
         """
         Asynchronously create the database if it does not already exist.
         """
         try:
-            self.logger.info(f"Checking if database '{db_name}' exists...")
+            self.logger.info(f"🔍 Checking if database '{db_name}' exists...")
 
             # Connect to the 'postgres' database
             conn = await asyncpg.connect(dsn="postgresql://gustavo:password@localhost/postgres")
@@ -41,15 +41,15 @@ class HistoricalDataFetcher:
             exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1;", db_name)
 
             if not exists:
-                self.logger.info(f"Creating database: {db_name}")
+                self.logger.info(f"🛠 Creating database: {db_name}")
                 await conn.execute(f'CREATE DATABASE "{db_name}";')
-                self.logger.info(f"Database '{db_name}' created successfully.")
+                self.logger.info(f"✅ Database '{db_name}' created successfully.")
 
             # Close the connection
             await conn.close()
 
         except Exception as e:
-            self.logger.error(f"Error creating database '{db_name}': {e}")
+            self.logger.error(f"❌ Error creating database '{db_name}': {e}")
             raise
 
     def construct_api_url(self, stock_symbol: str, interval: str) -> str:
@@ -57,7 +57,7 @@ class HistoricalDataFetcher:
         Construct the API URL using the stock symbol and interval.
         """
         url = f"{self.base_url}?function={interval}&symbol={stock_symbol.upper()}&apikey={self.api_key}"
-        self.logger.debug(f"Constructed API URL: {url}")
+        self.logger.debug(f"🔗 Constructed API URL: {url}")
         return url
 
     def fetch_data_from_api(self, url: str) -> dict:
@@ -65,13 +65,13 @@ class HistoricalDataFetcher:
         Fetch data from the external API.
         """
         try:
-            self.logger.info(f"Fetching data from API: {url}")
+            self.logger.info(f"📡 Fetching data from API: {url}")
             response = requests.get(url)
             response.raise_for_status()
-            self.logger.info("Data fetched successfully from API.")
+            self.logger.info("✅ Data fetched successfully from API.")
             return response.json()
         except requests.RequestException as e:
-            self.logger.error(f"Error fetching data from API: {e}")
+            self.logger.error(f"❌ Error fetching data from API: {e}")
             raise
 
     def process_api_response(self, api_response: dict, stock_symbol: str) -> pd.DataFrame:
@@ -79,7 +79,7 @@ class HistoricalDataFetcher:
         Process and structure the API response into a Pandas DataFrame.
         """
         try:
-            self.logger.info("Processing API response...")
+            self.logger.info("📊 Processing API response...")
             time_series = api_response.get("Monthly Time Series", {})
 
             if not time_series:
@@ -90,13 +90,13 @@ class HistoricalDataFetcher:
                 for date, info in time_series.items()
             ]
             df = pd.DataFrame(data)
-            self.logger.info("API response processed successfully.")
+            self.logger.info("✅ API response processed successfully.")
             return df
         except KeyError as e:
-            self.logger.error(f"Error processing data: Missing key {e}")
+            self.logger.error(f"❌ Error processing data: Missing key {e}")
             raise KeyError(f"Error processing data: Missing key {e}")
         except Exception as e:
-            self.logger.error(f"Unexpected error while processing data: {e}")
+            self.logger.error(f"❌ Unexpected error while processing data: {e}")
             raise ValueError(f"Unexpected error while processing data: {e}")
 
     def store_to_database(self, df: pd.DataFrame, db_name: str):
@@ -121,7 +121,7 @@ class HistoricalDataFetcher:
 
         db_session = SessionLocal()
         try:
-            self.logger.info(f"Storing data in database {db_name}...")
+            self.logger.info(f"📂 Storing data in database {db_name}...")
 
             for _, row in df.iterrows():
                 record = StockHistoricalData(
@@ -135,42 +135,57 @@ class HistoricalDataFetcher:
                 db_session.merge(record)
 
             db_session.commit()
-            self.logger.info(f"Data successfully stored in database {db_name}.")
+            self.logger.info(f"✅ Data successfully stored in database {db_name}.")
 
         except Exception as e:
             db_session.rollback()
-            self.logger.error(f"Database error in {db_name}: {e}")
+            self.logger.error(f"❌ Database error in {db_name}: {e}")
 
         finally:
             db_session.close()
 
-    def fetch_and_store_historical_data(self, entity_extract_output: EntityExtractOutput) -> DataFetchOutput:
+    def fetch_and_store_historical_data(self, state: WorkflowState) -> WorkflowState:
         """
-        Process EntityExtractOutput, fetch data, store in DB, and return DataFetchOutput.
+        Fetches historical stock data based on extracted entity details.
+        Ensures async DB creation is handled correctly inside a sync function.
+        Updates only `None` values while keeping existing state data intact.
         """
-        self.logger.info("Processing entity extract output...")
+        self.logger.info("📡 Running Data Fetching Node...")
 
-        # Construct database name based on stock symbol and time series type
-        db_name = f"{entity_extract_output.stock_symbol.lower()}_{entity_extract_output.date_period.lower()}"
+        # ✅ Ensure required fields are not None before proceeding
+        if not state.stock_symbol or not state.date_period:
+            raise ValueError("❌ Missing required stock_symbol or date_period for data fetching.")
 
-        # Run async database creation synchronously
-        asyncio.run(self.create_database_if_not_exists(db_name))
+        # ✅ Construct database name based on stock symbol and time series type
+        db_name = f"{state.stock_symbol.lower()}_{state.date_period.lower()}"
 
-        # Fetch data
-        url = self.construct_api_url(entity_extract_output.stock_symbol, entity_extract_output.date_period)
+        # ✅ Ensure the async function runs correctly in a sync context
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # No running loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        self.logger.info(f"🛠 Ensuring database exists: {db_name}")
+        loop.run_until_complete(self.create_database_if_not_exists(db_name))
+        self.logger.info(f"✅ Database ready: {db_name}")
+
+        # ✅ Fetch and process data synchronously
+        url = self.construct_api_url(state.stock_symbol, state.date_period)
+        self.logger.info(f"📡 Fetching data from API: {url}")
         api_response = self.fetch_data_from_api(url)
-        df = self.process_api_response(api_response, entity_extract_output.stock_symbol)
+        df = self.process_api_response(api_response, state.stock_symbol)
 
-        # Store to database
+        # ✅ Store to database
         self.store_to_database(df, db_name)
 
-        # Construct database URL
+        # ✅ Construct database URL
         database_url = f"postgresql://gustavo:password@localhost/{db_name}"
 
-        # Return DataFetchOutput
-        return DataFetchOutput(
-        user_input=entity_extract_output.user_input,  # Keep user input
-        stock_symbol=entity_extract_output.stock_symbol,
-        date_period=entity_extract_output.date_period,
-        date_target=entity_extract_output.date_target,
-        database_url=database_url)
+        # ✅ Update only `None` values in WorkflowState
+        updated_data = {
+            "database_url": database_url if state.database_url is None else state.database_url
+        }
+
+        # ✅ Merge updated data while preserving existing values
+        return state.model_copy(update=updated_data)

@@ -1,3 +1,7 @@
 price/
 db
 .env
+mlartifacts
+mlruns
+package-lock.json
+package.json

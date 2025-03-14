@@ -1,8 +1,8 @@
 import json
-from typing import Union, Dict
+from typing import Dict
 from app.utils.llm_wrappers import LLMSelector  # ✅ Import LLM selector for dynamic LLM choice
 from app.utils.logger import get_logger
-from app.utils.datatypes import UserInputString, ResearchOutput, ReasoningOutput
+from app.utils.datatypes import WorkflowState  # ✅ Unified WorkflowState
 from app.utils.config import config
 
 # ✅ Initialize logger
@@ -23,52 +23,46 @@ class ReasoningNode:
         # ✅ Dynamically select LLM provider (Google Gemini, OpenAI, Ollama)
         self.agent = LLMSelector.get_llm(provider=config.LLM_PROVIDER, model_name=config.REASONING_MODEL)
 
-        logger.info(f"ReasoningNode initialized with LLM: {config.LLM_PROVIDER}")
+        logger.info(f"✅ ReasoningNode initialized with LLM: {config.LLM_PROVIDER}")
 
-    def construct_prompt(self, input_data: Dict) -> str:
+    def construct_prompt(self, state: Dict) -> str:
         """
-        Constructs a reasoning prompt using all keys from the input dictionary.
+        Constructs a reasoning prompt using all keys from the current workflow state.
         """
         prompt = (
-            "Analyze the following input data (focusing in the user input key) and generate reasoning based on it:\n"
-            f"{json.dumps(input_data, indent=2)}\n"
-            "Explain the significance and implications of the provided information."
+            "Analyze the following user input and associated data, and generate reasoning based on it:\n"
+            f"{json.dumps(state, indent=2)}\n"
+            "Explain the significance and implications of the provided information. avoid mentioning the format of the json, because its irrelevant to the reasoning. alsofocus in the user input key and answer it."
         )
         return prompt
 
-    def generate_reasoning(self, input_data: Union[UserInputString, ResearchOutput]) -> ReasoningOutput:
+    def generate_reasoning(self, state: WorkflowState) -> WorkflowState:
         """
         Generates reasoning using the dynamically selected LLM.
-
-        Args:
-            input_data (Union[UserInputString, ResearchOutput]): Either user input 
-            or research-related data.
-        
-        Returns:
-            ReasoningOutput: AI-generated reasoning as structured output.
+        Updates only `None` values in WorkflowState.
         """
         try:
-            input_dict = input_data.model_dump()
+            state_dict = state.model_dump()
 
-            # Construct the reasoning prompt
-            prompt = self.construct_prompt(input_dict)
+            # ✅ Construct reasoning prompt based on the entire state
+            prompt = self.construct_prompt(state_dict)
 
-            # Invoke the selected LLM model
-            logger.info("Invoking LLM for reasoning...")
-            response = self.agent.generate(prompt)  # ✅ Updated call to `.generate()`
-            logger.info(f"Response from LLM: {response}")
+            # ✅ Invoke LLM model for reasoning
+            logger.info("🧠 Invoking LLM for reasoning...")
+            response = self.agent.generate(prompt)
+            logger.info(f"📖 Response from LLM: {response}")
 
-            # Parse response and return structured reasoning
-            return ReasoningOutput(
-                user_input=input_data.user_input,
-                next_state=input_data.next_state,
-                reasoning_output=response.strip()
-            )
+            # ✅ Update only if `reasoning_output` is None
+            updated_data = {
+                "reasoning_output": response.strip() if state.reasoning_output is None else state.reasoning_output
+            }
+
+            # ✅ Merge updated data while preserving prior state
+            return state.model_copy(update=updated_data)
 
         except Exception as e:
-            logger.error(f"Error in reasoning node: {e}")
-            return ReasoningOutput(
-                user_input=input_data.user_input,
-                next_state=input_data.next_state,  # ✅ Ensure next_state persists
-                reasoning_output="Failed to generate reasoning."
-            )
+            logger.error(f"❌ Error in reasoning node: {e}")
+
+            return state.model_copy(update={
+                "reasoning_output": state.reasoning_output or "⚠️ Failed to generate reasoning."
+            })
