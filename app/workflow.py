@@ -8,6 +8,7 @@ from app.graph_nodes.stock.prediction import StockPredictor
 from app.graph_nodes.research.web_researcher_agent import ResearcherNode
 from app.graph_nodes.reasoning.reasoning_agent import ReasoningNode
 from app.graph_nodes.main_router import MainRouterNode
+from app.utils.utils import anonymize_database_url
 
 logger = get_logger("Workflow")
 
@@ -56,7 +57,12 @@ def create_workflow():
         # ✅ Fetch and return data
         data_fetch_output = fetcher.fetch_and_store_historical_data(state)  # ✅ Returns `WorkflowState`
 
-        logger.info("🗄️ Data Fetch Output: %s", data_fetch_output.model_dump())
+            # ✅ Anonymize database URL before logging
+        data_output_dict = data_fetch_output.model_dump()
+        if "database_url" in data_output_dict:
+            data_output_dict["database_url"] = anonymize_database_url(data_output_dict["database_url"])
+
+        logger.info("🗄️ Data Fetch Output: %s", data_output_dict)
 
         return data_fetch_output  # ✅ Directly return modified state
 
@@ -70,7 +76,7 @@ def create_workflow():
         trainer = StockDataTrainer()
         final_state = trainer.execute_training(state)  # ✅ Returns `WorkflowState`
 
-        logger.info("📈 Model Training Output: %s", final_state.model_dump())
+        #logger.info("📈 Model Training Output: %s", final_state.model_dump())
 
         return final_state  # ✅ Directly return modified state
 
@@ -91,8 +97,6 @@ def create_workflow():
         # 🔍 Ensure `prediction_output` is of the correct type before logging
         if not isinstance(prediction_output, WorkflowState):
             raise TypeError(f"❌ prediction_output is {type(prediction_output)}, expected WorkflowState")
-
-        logger.info("📊 Prediction Output: %s", prediction_output.model_dump())
 
         return prediction_output
 

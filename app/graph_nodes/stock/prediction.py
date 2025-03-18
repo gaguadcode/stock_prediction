@@ -6,11 +6,12 @@ from typing import List
 from app.utils.logger import get_logger
 from app.utils.datatypes import WorkflowState
 from sklearn.ensemble import GradientBoostingRegressor
+from app.utils.utils import anonymize_database_url
 
 
 class StockPredictor:
     """
-    Uses a trained Gradient Boosting model from WorkflowState 
+    Uses the latest "best" trained Gradient Boosting model from MLflow 
     to make predictions on future stock prices.
     """
 
@@ -21,53 +22,40 @@ class StockPredictor:
         self.logger = get_logger(self.__class__.__name__)
         self.state = state
         self.mlflow_client = MlflowClient()  # ✅ Initialize MLflow client
+        self.model_alias = "best"  # ✅ Load by alias only
         self.model_name = "GradientBoostingRegressor"  # ✅ Ensure consistency
 
         # ✅ Extract granularity from state
         self.granularity = state.date_period
 
-        # ✅ Load trained model from MLflow artifacts
+        # ✅ Load trained model from MLflow (Ensures model must exist)
         self.model = self.load_model_from_mlflow()
 
         if not isinstance(self.model, GradientBoostingRegressor):
-            raise ValueError("The loaded model from MLflow is not a GradientBoostingRegressor!")
+            raise ValueError("❌ The loaded model from MLflow is not a GradientBoostingRegressor!")
 
     def load_model_from_mlflow(self) -> GradientBoostingRegressor:
         """
-        Loads the latest trained Gradient Boosting model from MLflow Model Registry.
+        Loads the latest trained Gradient Boosting model from MLflow Model Registry 
+        using the alias 'best'. Raises an exception if no model is found.
         """
         try:
-            self.logger.info("📥 Attempting to load the latest trained model from MLflow...")
+            self.logger.info("📥 Attempting to load the latest trained model from MLflow (alias: 'best')...")
 
-            # ✅ Ensure MLflow tracking server is reachable
-            registered_models = self.mlflow_client.search_registered_models()
-            model_names = [model.name for model in registered_models]
-
-            if self.model_name not in model_names:
-                self.logger.error(f"❌ Model '{self.model_name}' not found in MLflow Registry.")
-                raise ValueError("No registered model found in MLflow. Ensure training has been completed.")
-
-            # ✅ Fetch latest model version
-            model_version = self.mlflow_client.get_model_version_by_alias(self.model_name, "latest")
-
-            if not model_version:
-                self.logger.error("❌ No model version found under alias 'latest'.")
-                raise ValueError("No model version assigned to 'latest'. Ensure training has been completed.")
-
-            # ✅ Load the model using the correct URI
-            model_uri = f"models:/{self.model_name}@latest"
+            # ✅ Load the model using alias
+            model_uri = f"models:/{self.model_name}@{self.model_alias}"
             model = mlflow.sklearn.load_model(model_uri)
 
-            self.logger.info(f"✅ Successfully loaded latest trained model from MLflow (version: {model_version.version}).")
+            self.logger.info(f"✅ Successfully loaded latest trained model from MLflow using alias '{self.model_alias}'.")
             return model
 
-        except mlflow.exceptions.RestException as e:
+        except mlflow.exceptions.MlflowException as e:
             self.logger.error(f"❌ MLflow error: {e}")
-            raise ValueError("MLflow Model Registry is unavailable or misconfigured.")
+            raise ValueError("❌ MLflow Model Registry is unavailable or misconfigured.")
 
         except Exception as e:
             self.logger.error(f"❌ Failed to load model from MLflow: {e}")
-            raise ValueError("No trained model found in MLflow. Ensure that the model has been trained and logged.")
+            raise ValueError("❌ No trained model found in MLflow with alias 'best'. Ensure training has been completed.")
 
     def transform_dates(self) -> pd.DataFrame:
         """
@@ -108,7 +96,7 @@ class StockPredictor:
     def make_predictions(self) -> WorkflowState:
         """
         Predicts stock prices based on the transformed state.
-        Ensures that `predictions` is only updated if not already set.
+        Raises an exception if the model is not found.
         """
         if not self.state.date_target:
             raise ValueError("❌ Target dates are missing. Ensure entity extraction is complete before prediction.")
@@ -120,15 +108,15 @@ class StockPredictor:
         self.logger.info(f"📊 Making predictions for {self.state.stock_symbol}...")
         predictions = list(map(float, self.model.predict(transformed_data)))  # Ensure floats
 
-        self.logger.info("✅ Stock Prediction Output: %s", {
-            "user_input": self.state.user_input,  
-            "stock_symbol": self.state.stock_symbol,
-            "date_period": self.state.date_period,
-            "date_target": self.state.date_target,
-            "database_url": self.state.database_url,  
-            "mse": self.state.mse,  
-            "predictions": predictions
-        })
+        # ✅ Dump full state, but anonymize database_url before logging
+        state_dict = self.state.model_dump()
+        if "database_url" in state_dict:
+            state_dict["database_url"] = anonymize_database_url(state_dict["database_url"])
+
+        # ✅ Add predictions to the state before logging
+        state_dict["predictions"] = predictions
+
+        self.logger.info("✅ Stock Prediction Output: %s", state_dict)
 
         # ✅ Avoid duplicate key error by updating only if necessary
         updated_data = {}
@@ -138,7 +126,7 @@ class StockPredictor:
         # ✅ Convert to WorkflowState explicitly
         new_state = self.state.model_copy(update=updated_data)
 
-        # ✅ Check type
+        # ✅ Ensure the return type is correct
         if not isinstance(new_state, WorkflowState):
             raise TypeError(f"❌ make_predictions() returned {type(new_state)} instead of WorkflowState")
 

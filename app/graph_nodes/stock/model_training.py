@@ -11,12 +11,13 @@ from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
 from app.utils.logger import get_logger
 from app.utils.datatypes import WorkflowState
+from app.utils.utils import anonymize_database_url
 
 class StockDataTrainer:
     """
     Trains a Gradient Boosting model using stock data, 
     performs hyperparameter tuning, logs training results in MLflow,
-    and updates the 'latest' alias when a better model is found.
+    and updates the 'best' alias when a better model is found.
     """
 
     def __init__(self, date_column='date', target_column='price'):
@@ -48,18 +49,19 @@ class StockDataTrainer:
         """
         Fetch stock data from the database using the provided database URL.
         """
-        self.logger.info(f"Connecting to database: {database_url}")
+        database_url_anonimized = anonymize_database_url(database_url)
+        self.logger.info(f"📡 Connecting to database: {database_url_anonimized}")
         engine = create_engine(database_url)
         query = "SELECT * FROM historical_stock_data"
 
         try:
             df = pd.read_sql(query, engine)
             if df.empty:
-                raise ValueError("No data retrieved from database.")
-            self.logger.info(f"Fetched {len(df)} rows from database.")
+                raise ValueError("❌ No data retrieved from database.")
+            self.logger.info(f"✅ Fetched {len(df)} rows from database.")
             return df
         except Exception as e:
-            self.logger.error(f"Error fetching data from database: {e}")
+            self.logger.error(f"❌ Error fetching data from database: {e}")
             raise
 
     def transform_dates(self, dataframe: pd.DataFrame, granularity: str) -> pd.DataFrame:
@@ -67,7 +69,7 @@ class StockDataTrainer:
         Transforms the date column into machine-learning-friendly features.
         """
         try:
-            self.logger.info(f"Transforming date column for granularity: {granularity}")
+            self.logger.info(f"🔄 Transforming date column for granularity: {granularity}")
             dataframe[self.date_column] = pd.to_datetime(dataframe[self.date_column])
             dataframe['year'] = dataframe[self.date_column].dt.year
 
@@ -87,22 +89,26 @@ class StockDataTrainer:
             dataframe.drop(columns=[self.date_column], inplace=True)
             return dataframe
         except Exception as e:
-            self.logger.error(f"Error in transform_dates: {e}")
+            self.logger.error(f"❌ Error in transform_dates: {e}")
             raise
 
     def preprocess_data(self, df: pd.DataFrame, granularity: str):
         """
         Prepares the features (X) and target (y) for training.
         """
-        self.logger.info("Preprocessing data...")
+        self.logger.info("🔄 Preprocessing data...")
 
-        # ✅ Transform date features
+        # ✅ Apply date transformations
         df_transformed = self.transform_dates(df, granularity)
 
         # ✅ Extract features (X) and target (y)
+        if self.target_column not in df_transformed.columns:
+            raise ValueError(f"❌ Target column '{self.target_column}' not found in DataFrame.")
+
         X = df_transformed.drop(columns=[self.target_column], errors="ignore").select_dtypes(include=[np.number])
         y = df_transformed[self.target_column]
 
+        self.logger.info(f"✅ Data preprocessing complete. Feature shape: {X.shape}, Target shape: {y.shape}")
         return X, y
 
     def train_model_with_hyperparameter_tuning(self, X_train, y_train):
@@ -121,12 +127,10 @@ class StockDataTrainer:
             "min_samples_leaf": np.arange(1, 10)
         }
 
-        # ✅ Create base model
-        model = GradientBoostingRegressor(random_state=42)
-
         # ✅ Perform randomized search
         search = RandomizedSearchCV(
-            model, param_distributions=param_dist, 
+            GradientBoostingRegressor(random_state=42), 
+            param_distributions=param_dist, 
             n_iter=20, cv=3, scoring='neg_mean_squared_error', 
             verbose=2, random_state=42, n_jobs=-1
         )
@@ -138,53 +142,76 @@ class StockDataTrainer:
         self.best_params = search.best_params_
         self.logger.info(f"✅ Best hyperparameters found: {self.best_params}")
 
-    def evaluate_model(self, X_test, y_test):
+    def evaluate_and_log_model(self, X_test, y_test):
         """
-        Evaluates the model and stores the Mean Squared Error (MSE).
+        Evaluates the model, logs it to MLflow, and updates the 'best' alias if necessary.
         """
         y_pred = self.model.predict(X_test)
         self.mse = mean_squared_error(y_test, y_pred)
         self.logger.info(f"✅ Model Evaluation Complete - MSE: {self.mse}")
 
+        with mlflow.start_run() as run:
+            # ✅ Log hyperparameters and metrics
+            mlflow.log_params(self.best_params)
+            mlflow.log_metric("mse", self.mse)
+
+            # ✅ Log the model with input example and signature
+            signature = infer_signature(X_test, y_pred)
+            mlflow.sklearn.log_model(self.model, artifact_path="model", signature=signature)
+
+            self.register_and_update_alias(run.info.run_id)
+            print("este es el runid")
+            print(run.info.run_id)
+
     def register_and_update_alias(self, run_id):
         """
-        Registers the model and updates the 'latest' alias if performance improves.
+        Registers the model in MLflow and updates the 'best' alias if performance improves.
+        Logs extensive details to ensure proper tracking.
         """
         model_uri = f"runs:/{run_id}/model"
         client = self.mlflow_client
 
+        # ✅ Log the model URI before proceeding
+        self.logger.info(f"🔍 Model URI for registration: {model_uri}")
+
+        # ✅ Check all registered models before registering
+        registered_models = [m.name for m in client.search_registered_models()]
+        self.logger.info(f"📜 Currently registered models in MLflow: {registered_models}")
+
         # ✅ Ensure the model is registered before adding versions
-        try:
-            client.get_registered_model(self.model_name)
-            self.logger.info(f"✅ Registered model '{self.model_name}' already exists.")
-        except mlflow.exceptions.RestException:
-            self.logger.info(f"⚠️ Registered model '{self.model_name}' not found. Creating new model in registry...")
+        if self.model_name not in registered_models:
             client.create_registered_model(self.model_name)
+            self.logger.info(f"✅ Registered model '{self.model_name}' created successfully.")
+        else:
+            self.logger.info(f"ℹ️ Model '{self.model_name}' already exists in registry.")
 
         # ✅ Register new model version
         model_version = client.create_model_version(
             name=self.model_name, source=model_uri, run_id=run_id
         )
+        self.logger.info(f"✅ New model version registered: Version {model_version.version}")
 
-        # ✅ Check if there's a current 'latest' model
+        # ✅ Check if there's an existing 'best' alias version
         try:
-            latest_version = client.get_model_version_by_alias(self.model_name, "latest")
-            latest_version_mse = float(latest_version.tags.get("mse", float('inf')))
+            best_version = client.get_model_version_by_alias(self.model_name, "best")
+            best_version_mse = float(best_version.tags.get("mse", float('inf')))
+            self.logger.info(f"🔍 Current 'best' model version: {best_version.version} (MSE: {best_version_mse})")
         except Exception:
-            latest_version = None
-            latest_version_mse = float('inf')
+            best_version_mse = float('inf')
+            self.logger.warning(f"⚠️ No existing 'best' model version found.")
 
         # ✅ Compare MSE and update alias if the new model is better
-        if self.mse < latest_version_mse:
+        self.logger.info(f"🔍 Comparing current MSE ({self.mse}) with 'best' version MSE ({best_version_mse})")
+        if self.mse < best_version_mse:
             client.set_model_version_tag(model_version.name, model_version.version, "mse", str(self.mse))
-            client.set_registered_model_alias(self.model_name, "latest", model_version.version)
-            self.logger.info(f"✅ Updated 'latest' alias to version {model_version.version} with MSE {self.mse}")
-
+            client.set_registered_model_alias(self.model_name, "best", model_version.version)
+            self.logger.info(f"🏆 'best' alias updated to version {model_version.version} with MSE {self.mse}")
+        else:
+            self.logger.info(f"📉 Model version {model_version.version} not assigned 'best' alias (MSE is worse).")
 
     def execute_training(self, state: WorkflowState) -> WorkflowState:
         """
-        Fetches data, preprocesses, trains the model with hyperparameter tuning, 
-        logs to MLflow, and updates only `None` values in the WorkflowState.
+        Executes full training pipeline and updates WorkflowState.
         """
         df = self.fetch_data_from_db(state.database_url)
         X, y = self.preprocess_data(df, self.get_granularity(state.date_period))
@@ -192,9 +219,6 @@ class StockDataTrainer:
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
         self.train_model_with_hyperparameter_tuning(X_train, y_train)
-        self.evaluate_model(X_test, y_test)
-
-        with mlflow.start_run() as run:
-            self.register_and_update_alias(run.info.run_id)
+        self.evaluate_and_log_model(X_test, y_test)
 
         return state.model_copy(update={"mse": self.mse})

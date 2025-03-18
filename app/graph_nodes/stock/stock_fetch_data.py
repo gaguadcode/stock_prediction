@@ -5,7 +5,7 @@ import asyncpg
 from sqlalchemy import create_engine, Column, String, Float, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
-
+import re
 # Importing configurations and utilities
 from app.utils.config import config
 from app.utils.datatypes import WorkflowState
@@ -35,7 +35,7 @@ class HistoricalDataFetcher:
             self.logger.info(f"🔍 Checking if database '{db_name}' exists...")
 
             # Connect to the 'postgres' database
-            conn = await asyncpg.connect(dsn="postgresql://gustavo:password@localhost/postgres")
+            conn = await asyncpg.connect(dsn=self.postgres_url)
 
             # Check if the database exists
             exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1;", db_name)
@@ -64,14 +64,15 @@ class HistoricalDataFetcher:
         """
         Fetch data from the external API.
         """
+        masked_url = re.sub(r'apikey=[^&]+', 'api_key=****', url)
         try:
-            self.logger.info(f"📡 Fetching data from API: {url}")
+            self.logger.info(f"📡 Fetching data from API: {masked_url}")
             response = requests.get(url)
             response.raise_for_status()
             self.logger.info("✅ Data fetched successfully from API.")
             return response.json()
         except requests.RequestException as e:
-            self.logger.error(f"❌ Error fetching data from API: {e}")
+            self.logger.error(f"❌ Error fetching data from API: {masked_url}")
             raise
 
     def process_api_response(self, api_response: dict, stock_symbol: str) -> pd.DataFrame:
@@ -172,7 +173,6 @@ class HistoricalDataFetcher:
 
         # ✅ Fetch and process data synchronously
         url = self.construct_api_url(state.stock_symbol, state.date_period)
-        self.logger.info(f"📡 Fetching data from API: {url}")
         api_response = self.fetch_data_from_api(url)
         df = self.process_api_response(api_response, state.stock_symbol)
 
