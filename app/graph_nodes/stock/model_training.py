@@ -1,36 +1,37 @@
-import pickle
-import redis
 import mlflow
 import mlflow.sklearn
 import pandas as pd
 import numpy as np
+from typing import Dict
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.metrics import mean_squared_error
 from sqlalchemy import create_engine
 from mlflow.models import infer_signature
+from mlflow.tracking import MlflowClient
 from app.utils.logger import get_logger
 from app.utils.datatypes import WorkflowState
 
 class StockDataTrainer:
     """
-    Trains a Gradient Boosting model using stock data, logs training 
-    results in MLflow, and saves the model in Redis.
+    Trains a Gradient Boosting model using stock data, 
+    performs hyperparameter tuning, logs training results in MLflow,
+    and updates the 'latest' alias when a better model is found.
     """
 
-    def __init__(self, redis_host="localhost", redis_port=6379, redis_db=0, date_column='date', target_column='price'):
+    def __init__(self, date_column='date', target_column='price'):
         self.logger = get_logger(self.__class__.__name__)
         self.date_column = date_column
         self.target_column = target_column
         self.model = None
         self.mse = None
+        self.best_params = None  # Stores best hyperparameters
+        self.model_name = "GradientBoostingRegressor"
+        self.mlflow_client = MlflowClient()
 
         # ✅ MLflow Setup
         mlflow.set_tracking_uri("http://127.0.0.1:8080")  # Ensure MLflow is running
         mlflow.set_experiment("Stock Prediction Training")
-
-        # ✅ Redis Connection
-        self.redis_client = redis.Redis(host=redis_host, port=redis_port, db=redis_db)
 
     def get_granularity(self, date_period: str) -> str:
         """
@@ -104,14 +105,38 @@ class StockDataTrainer:
 
         return X, y
 
-    def train_model(self, X_train, y_train):
+    def train_model_with_hyperparameter_tuning(self, X_train, y_train):
         """
-        Trains a Gradient Boosting regression model.
+        Performs randomized hyperparameter tuning for Gradient Boosting Regressor.
         """
-        self.logger.info("Training Gradient Boosting model...")
-        self.model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=42)
-        self.model.fit(X_train, y_train)
-        self.logger.info("Model training complete.")
+        self.logger.info("🔍 Performing hyperparameter tuning...")
+
+        # ✅ Define parameter grid
+        param_dist = {
+            "n_estimators": np.arange(50, 300, 50),
+            "learning_rate": np.linspace(0.01, 0.3, 10),
+            "max_depth": np.arange(3, 10),
+            "subsample": np.linspace(0.6, 1.0, 5),
+            "min_samples_split": np.arange(2, 10),
+            "min_samples_leaf": np.arange(1, 10)
+        }
+
+        # ✅ Create base model
+        model = GradientBoostingRegressor(random_state=42)
+
+        # ✅ Perform randomized search
+        search = RandomizedSearchCV(
+            model, param_distributions=param_dist, 
+            n_iter=20, cv=3, scoring='neg_mean_squared_error', 
+            verbose=2, random_state=42, n_jobs=-1
+        )
+
+        search.fit(X_train, y_train)
+
+        # ✅ Store best model and parameters
+        self.model = search.best_estimator_
+        self.best_params = search.best_params_
+        self.logger.info(f"✅ Best hyperparameters found: {self.best_params}")
 
     def evaluate_model(self, X_test, y_test):
         """
@@ -119,71 +144,57 @@ class StockDataTrainer:
         """
         y_pred = self.model.predict(X_test)
         self.mse = mean_squared_error(y_test, y_pred)
-        self.logger.info(f"Model Evaluation Complete - MSE: {self.mse}")
+        self.logger.info(f"✅ Model Evaluation Complete - MSE: {self.mse}")
 
-    def save_model_to_mlflow(self, X_sample):
+    def register_and_update_alias(self, run_id):
         """
-        Logs the trained model and evaluation metrics in MLflow with input example and signature.
+        Registers the model and updates the 'latest' alias if performance improves.
         """
-        with mlflow.start_run():
-            mlflow.log_param("model_type", "GradientBoostingRegressor")
-            mlflow.log_metric("mse", self.mse)
+        model_uri = f"runs:/{run_id}/model"
+        client = self.mlflow_client
 
-            # ✅ Generate signature
-            signature = infer_signature(X_sample, self.model.predict(X_sample))
+        # ✅ Ensure the model is registered before adding versions
+        try:
+            client.get_registered_model(self.model_name)
+            self.logger.info(f"✅ Registered model '{self.model_name}' already exists.")
+        except mlflow.exceptions.RestException:
+            self.logger.info(f"⚠️ Registered model '{self.model_name}' not found. Creating new model in registry...")
+            client.create_registered_model(self.model_name)
 
-            # ✅ Log model with signature and input example
-            mlflow.sklearn.log_model(
-                sk_model=self.model,
-                artifact_path="model",
-                signature=signature,
-                input_example=X_sample[:5]  # Provide a small input sample
-            )
+        # ✅ Register new model version
+        model_version = client.create_model_version(
+            name=self.model_name, source=model_uri, run_id=run_id
+        )
 
-            self.logger.info("Model logged to MLflow with signature and input example.")
+        # ✅ Check if there's a current 'latest' model
+        try:
+            latest_version = client.get_model_version_by_alias(self.model_name, "latest")
+            latest_version_mse = float(latest_version.tags.get("mse", float('inf')))
+        except Exception:
+            latest_version = None
+            latest_version_mse = float('inf')
 
-    def save_model_to_redis(self, model_key="trained_model"):
-        """
-        Serializes and stores the trained model in Redis.
-        """
-        if self.model is None:
-            self.logger.error("No trained model found to save.")
-            return
+        # ✅ Compare MSE and update alias if the new model is better
+        if self.mse < latest_version_mse:
+            client.set_model_version_tag(model_version.name, model_version.version, "mse", str(self.mse))
+            client.set_registered_model_alias(self.model_name, "latest", model_version.version)
+            self.logger.info(f"✅ Updated 'latest' alias to version {model_version.version} with MSE {self.mse}")
 
-        model_bytes = pickle.dumps(self.model)
-        self.redis_client.set(model_key, model_bytes)
-        self.logger.info(f"Model saved to Redis with key: {model_key}")
 
     def execute_training(self, state: WorkflowState) -> WorkflowState:
         """
-        Fetches data, preprocesses, trains the model, logs to MLflow, saves it in Redis, 
-        and updates only `None` values in the WorkflowState.
+        Fetches data, preprocesses, trains the model with hyperparameter tuning, 
+        logs to MLflow, and updates only `None` values in the WorkflowState.
         """
-        if not state.database_url:
-            raise ValueError("❌ Database URL is missing. Ensure data has been fetched before training.")
-
-        granularity = self.get_granularity(state.date_period)
-        self.logger.info(f"📊 Using granularity: {granularity}")
-
-        # ✅ Fetch and preprocess data
         df = self.fetch_data_from_db(state.database_url)
-        X, y = self.preprocess_data(df, granularity)
+        X, y = self.preprocess_data(df, self.get_granularity(state.date_period))
 
-        # ✅ Split data
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # ✅ Train and Evaluate
-        self.train_model(X_train, y_train)
+        self.train_model_with_hyperparameter_tuning(X_train, y_train)
         self.evaluate_model(X_test, y_test)
 
-        # ✅ Save Model
-        self.save_model_to_mlflow(X_train)  # Log in MLflow
-        self.save_model_to_redis()  # Save in Redis
+        with mlflow.start_run() as run:
+            self.register_and_update_alias(run.info.run_id)
 
-        # ✅ Prepare updated data while preserving existing values
-        updated_data = {
-            "mse": self.mse if state.mse is None else state.mse  # Update only if `mse` is None
-        }
-
-        # ✅ Merge updated data while preserving state
-        return state.model_copy(update=updated_data)
+        return state.model_copy(update={"mse": self.mse})

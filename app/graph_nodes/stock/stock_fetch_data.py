@@ -24,7 +24,7 @@ class HistoricalDataFetcher:
         self.logger = get_logger(self.__class__.__name__)
         self.base_url = config.ALPHAVANTAGE_BASE_URL
         self.api_key = config.ALPHAVANTAGE_API_KEY
-        self.postgres_url = "postgresql://gustavo:password@localhost/postgres"
+        self.postgres_url = config.POSTGRESQL_HOST
         self.logger.info("✅ HistoricalDataFetcher initialized.")
 
     async def create_database_if_not_exists(self, db_name: str):

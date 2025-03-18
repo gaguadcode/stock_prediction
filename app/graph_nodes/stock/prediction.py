@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
-import pickle
-import redis
+import mlflow
+from mlflow.tracking import MlflowClient
 from typing import List
 from app.utils.logger import get_logger
 from app.utils.datatypes import WorkflowState
@@ -14,34 +14,60 @@ class StockPredictor:
     to make predictions on future stock prices.
     """
 
-    def __init__(self, state: WorkflowState, redis_host="localhost", redis_port=6379, redis_db=0):
+    def __init__(self, state: WorkflowState):
         """
-        Initializes the predictor with a trained model and relevant metadata.
+        Initializes the predictor with a trained model from MLflow.
         """
         self.logger = get_logger(self.__class__.__name__)
         self.state = state
-        self.redis_client = redis.Redis(host=redis_host, port=redis_port, db=redis_db)
+        self.mlflow_client = MlflowClient()  # ✅ Initialize MLflow client
+        self.model_name = "GradientBoostingRegressor"  # ✅ Ensure consistency
 
         # ✅ Extract granularity from state
         self.granularity = state.date_period
 
-        # ✅ Load trained model from Redis
-        self.model = self.load_model_from_redis()
+        # ✅ Load trained model from MLflow artifacts
+        self.model = self.load_model_from_mlflow()
 
         if not isinstance(self.model, GradientBoostingRegressor):
-            raise ValueError("The model inside WorkflowState must be a trained GradientBoostingRegressor!")
+            raise ValueError("The loaded model from MLflow is not a GradientBoostingRegressor!")
 
-    def load_model_from_redis(self, model_key="trained_model") -> GradientBoostingRegressor:
+    def load_model_from_mlflow(self) -> GradientBoostingRegressor:
         """
-        Loads the trained Gradient Boosting model from Redis.
+        Loads the latest trained Gradient Boosting model from MLflow Model Registry.
         """
-        model_bytes = self.redis_client.get(model_key)
-        if model_bytes is None:
-            self.logger.error("No trained model found in Redis.")
-            raise ValueError("No trained model found in Redis. Ensure that the model has been trained and saved.")
+        try:
+            self.logger.info("📥 Attempting to load the latest trained model from MLflow...")
 
-        self.logger.info("✅ Loading trained model from Redis...")
-        return pickle.loads(model_bytes)
+            # ✅ Ensure MLflow tracking server is reachable
+            registered_models = self.mlflow_client.search_registered_models()
+            model_names = [model.name for model in registered_models]
+
+            if self.model_name not in model_names:
+                self.logger.error(f"❌ Model '{self.model_name}' not found in MLflow Registry.")
+                raise ValueError("No registered model found in MLflow. Ensure training has been completed.")
+
+            # ✅ Fetch latest model version
+            model_version = self.mlflow_client.get_model_version_by_alias(self.model_name, "latest")
+
+            if not model_version:
+                self.logger.error("❌ No model version found under alias 'latest'.")
+                raise ValueError("No model version assigned to 'latest'. Ensure training has been completed.")
+
+            # ✅ Load the model using the correct URI
+            model_uri = f"models:/{self.model_name}@latest"
+            model = mlflow.sklearn.load_model(model_uri)
+
+            self.logger.info(f"✅ Successfully loaded latest trained model from MLflow (version: {model_version.version}).")
+            return model
+
+        except mlflow.exceptions.RestException as e:
+            self.logger.error(f"❌ MLflow error: {e}")
+            raise ValueError("MLflow Model Registry is unavailable or misconfigured.")
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load model from MLflow: {e}")
+            raise ValueError("No trained model found in MLflow. Ensure that the model has been trained and logged.")
 
     def transform_dates(self) -> pd.DataFrame:
         """
