@@ -4,6 +4,7 @@ from app.utils.logger import get_logger
 from app.utils.datatypes import WorkflowState
 from app.utils.llm_wrappers import LLMSelector
 from app.utils.config import config
+from datetime import datetime, timedelta
 
 class StockDataExtractor:
     """
@@ -45,20 +46,53 @@ class StockDataExtractor:
             self.logger.error(f"❌ Python dictionary parsing failed: {e}")
             raise ValueError(f"Invalid Python dictionary format: {response}")
 
+    from datetime import datetime, timedelta
+
     def construct_prompt(self, input_text: str) -> str:
         """
         Constructs a structured prompt for the LLM to return a Python dictionary.
+        If input is in Markdown format:
+        - Assumes the most relevant information is the stock symbol.
+        - Defaults to TIME_SERIES_MONTHLY.
+        - Sets the target date as the first day of next month.
         """
         self.logger.info("🛠 Constructing prompt for entity extraction...")
+
+        # Compute the default target date (1st of next month)
+        today = datetime.today()
+        first_of_next_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+        default_date_target = first_of_next_month.strftime("%Y-%m-%d")
+
+        # Detect if input is Markdown (checks for Markdown-specific syntax)
+        is_markdown = any(tag in input_text for tag in ["#", "*", "-", "`"])
+
+        # If Markdown, apply default values
+        if is_markdown:
+            self.logger.info("📄 Detected Markdown input. Applying defaults for missing values.")
+
+            date_period = "TIME_SERIES_MONTHLY"
+            date_target = [default_date_target]
+        else:
+            # No Markdown, let LLM extract everything
+            date_period = "Extract from input"
+            date_target = "Extract from input"
+
+        # Construct the final structured prompt
         prompt = (
             "Extract the stock symbol (company or commodity), prediction window (date_period) "
             "(TIME_SERIES_MONTHLY, TIME_SERIES_WEEKLY, TIME_SERIES_DAILY), and target date(s) "
             "from the following user input:\n"
-            f"{input_text}\n"
+            f"{input_text}\n\n"
+            f"Input is in Markdown: {is_markdown}\n"
+            "If the input is in Markdown, assume the following defaults for missing values:\n"
+            f"- Date Period: '{date_period}'\n"
+            f"- Target Date: {date_target}\n\n"
             "Respond strictly in Python dictionary format (no Markdown, no extra text):\n"
             "{'stock_symbol': '...', 'date_period': '...', 'date_target': ['YYYY-MM-DD', ...]}"
         )
+
         return prompt
+
 
     def process_input(self, state: WorkflowState) -> WorkflowState:
         """

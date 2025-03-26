@@ -14,6 +14,8 @@ class Config(BaseSettings):
     langsmith_project: str
     GOOGLE_GEMINI_API_KEY: str
     POSTGRESQL_HOST: str
+    MISTRAL_URL: str
+    MISTRAL_API_KEY: str
     class Config:
         env_file = ".env"
 
