@@ -1,8 +1,9 @@
 fastapi
 pydantic
+pydantic-settings
 torch
 requests
-langchain
+langchain==0.3.19
 langchain-community
 langchain-ollama
 pandas
@@ -15,3 +16,5 @@ sqlalchemy
 pillow
 redis
 google-generativeai
+asyncpg
+mcp>=1.0.0

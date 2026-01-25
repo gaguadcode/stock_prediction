@@ -107,7 +107,7 @@ graph.add_edge("reasoning", END)
 workflow = graph.compile()
 
 # ✅ **Fix: Start with `UserInputString`, Expect `RouterOutput` Transition**
-test = UserInputString(user_input="reasoning about quantum computing", next_state="")  # Stock Prediction
+test = UserInputString(user_input="what will be the price of IBM stock for january 2026?", next_state="")  # Stock Prediction
 
 output = workflow.invoke(test)
 logger.info(f"Workflow Output: {output}\n")

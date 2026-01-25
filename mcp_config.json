@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "stock-prediction": {
+      "command": "python",
+      "args": ["/home/gustavo/Escritorio/stock_prediction/mcp_server.py"],
+      "env": {
+        "PYTHONPATH": "/home/gustavo/Escritorio/stock_prediction"
+      }
+    }
+  }
+}
